@@ -15,8 +15,7 @@ const byte phph[]  = {0x01, 0x03, 0x00, 0x03, 0x00, 0x01, 0x74, 0x0A};
 const byte nitro[] = {0x01, 0x03, 0x00, 0x04, 0x00, 0x01, 0xEC, 0x05};
 const byte phos[]  = {0x01, 0x03, 0x00, 0x05, 0x00, 0x01, 0xE9, 0x45};
 const byte pota[]  = {0x01, 0x03, 0x00, 0x06, 0x00, 0x01, 0xE6, 0x45};
-const byte sali[]  = {0x01, 0x03, 0x00, 0x07, 0x00, 0x01, 0xE3, 0x15};
-const byte tds[]   = {0x01, 0x03, 0x00, 0x08, 0x00, 0x01, 0xE0, 0x55};
+
 
 const uint8_t RESPONSE_BYTES = 7;
 const unsigned long RESPONSE_TIMEOUT_MS = 200;
@@ -83,7 +82,7 @@ void setup() {
   pinMode(RE_DE_PIN, OUTPUT);
   digitalWrite(RE_DE_PIN, LOW); // Start in receive mode.
 
-  Serial.println(F("7-in-1 soil sensor demo (Arduino Uno / RS485)"));
+  Serial.println(F("Sensor Readings"));
   Serial.println(F("------------------------------------------------"));
 }
 
@@ -95,8 +94,6 @@ void loop() {
   readSensorValue("Nitrogen",     nitro, sizeof(nitro), 1.0f, "mg/L");
   readSensorValue("Phosphorus",   phos,  sizeof(phos),  1.0f, "mg/L");
   readSensorValue("Potassium",    pota,  sizeof(pota),  1.0f, "mg/L");
-  readSensorValue("Salinity",     sali,  sizeof(sali),  1.0f, "g/L");
-  readSensorValue("TDS",          tds,   sizeof(tds),   1.0f, "mg/L");
 
   Serial.println();
   delay(SAMPLE_INTERVAL_MS);
