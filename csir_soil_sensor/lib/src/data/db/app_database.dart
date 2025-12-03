@@ -47,6 +47,9 @@ class CropImages extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  // Testing-only constructor to inject an in-memory database.
+  AppDatabase.forTesting(super.executor) : super();
+
   @override
   int get schemaVersion => 1;
 }
