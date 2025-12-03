@@ -29,12 +29,12 @@ ThemeData buildAppTheme() {
         ),
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
       elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
     ),
   );
 }
