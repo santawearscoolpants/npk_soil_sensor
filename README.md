@@ -25,6 +25,12 @@ The sketches here are intended as a solid starting point for experiments and int
 - `tft_display/tft_display.ino`  
   Arduino sketch for a small **ST7735**-based TFT display. Currently shows demo text and placeholders where soil sensor readings can be rendered later.
 
+- `tft_npk_esp32_final_v1.0/reading_display.ino`  
+  ESP32 sketch that **reads the RS485 soil sensor and paints the live values on the 1.8" ST7735 TFT**. Ideal when you only need a local display.
+
+- `npk_soil_sensor_v1.1/codeeS.ino`  
+  ESP32 sketch that combines **Modbus sensor reads, TFT rendering, Wi‑Fi connectivity, and ThingSpeak uploads**.
+
 - `7in1_Soil_sensor_arduino/7in1_Soil_sensor.ino`  
   Additional/earlier Arduino sketch for this sensor (kept for reference or alternative boards).
 
@@ -37,7 +43,7 @@ The sketches here are intended as a solid starting point for experiments and int
 - **Arduino‑compatible board** (e.g. Uno / Nano) for `tft_display.ino` and `7in1_Soil_sensor_arduino.ino`.
 
 ### Soil sensor
-- 7‑in‑1 RS485 **NPK soil sensor** (Modbus RTU).
+- Halisense 7‑in‑1 RS485 **NPK soil sensor** (Modbus RTU).
 
 ### RS485 interface
 - Typical **MAX485 / SP3485** RS485‑to‑TTL module.
@@ -48,6 +54,7 @@ The sketches here are intended as a solid starting point for experiments and int
 ---
 
 ## Wiring
+- [Full wiring diagram (Cirkit Designer project)](https://app.cirkitdesigner.com/project/8f170237-9afc-4cfa-946d-e55d664006a7)
 
 ### ESP32 ⇄ RS485 module ⇄ Soil sensor
 
@@ -127,6 +134,31 @@ Key points:
 
 This sketch is a **template** for a UI:
 - You can replace the dummy values and labels with **live values** from the soil sensor once you combine the sensor‑reading code and display code on the same board.
+
+---
+
+### `tft_npk_esp32_final_v1.0/reading_display.ino`
+
+Key points:
+- Runs entirely on an **ESP32**, so it can talk to the RS485 sensor and draw the values on the **ST7735** without a second MCU.
+- Uses the same SPI pinout as `tft_display.ino` for the screen and `RE_DE_PIN = 21`, `RS485_RX = 17`, `RS485_TX = 16` for the MAX485 interface.
+- Each loop reads 9 Modbus registers, scales them into human‑readable units, prints them to `Serial`, and refreshes the TFT screen.
+- Displays clear labels for Temp, Moisture, EC, pH, N, P, K, Salinity, and TDS, plus a red error banner if the Modbus transaction fails.
+
+Use it when you want a **stand‑alone ESP32 + TFT** dashboard without cloud publishing.
+
+---
+
+### `npk_soil_sensor_v1.1/codeeS.ino`
+
+Key points:
+- Builds on the previous ESP32 display sketch but also connects to Wi‑Fi and **pushes the readings to ThingSpeak**.
+- Keeps the TFT UI identical (same pinout, fonts, and layout) so you get both a local dashboard and a cloud feed.
+- Includes a `timerDelay` (30 s by default) to throttle uploads and automatically reconnects to Wi‑Fi if the link drops.
+- Uses `ThingSpeak.setField()` for Temp, Moisture, EC, pH, N, P, K, and Salinity before `ThingSpeak.writeFields()`. TDS stays local-only, but you can map it to another channel if needed.
+- Serial output mirrors what’s shown on the screen so debugging stays straightforward.
+
+Use it when you need **local visualization + remote logging**.
 
 ---
 
