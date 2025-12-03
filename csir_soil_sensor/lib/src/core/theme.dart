@@ -13,10 +13,20 @@ ThemeData buildAppTheme() {
   return ThemeData(
     colorScheme: colorScheme,
     useMaterial3: true,
+    scaffoldBackgroundColor: Colors.white,
     appBarTheme: AppBarTheme(
       backgroundColor: colorScheme.primary,
       foregroundColor: Colors.white,
       centerTitle: true,
+    ),
+    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      backgroundColor: Colors.white,
+      selectedItemColor: colorScheme.primary,
+      unselectedItemColor: Colors.grey.shade600,
+      selectedIconTheme: const IconThemeData(size: 26),
+      unselectedIconTheme: const IconThemeData(size: 22),
+      showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed,
     ),
     inputDecorationTheme: const InputDecorationTheme(
       border: OutlineInputBorder(),
@@ -34,7 +44,7 @@ ThemeData buildAppTheme() {
         borderRadius: BorderRadius.circular(16),
       ),
       elevation: 2,
-      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
     ),
   );
 }

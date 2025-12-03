@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/crop_repository.dart';
+import '../../services/permission_service.dart';
 
 final _cropRepoProvider = Provider<CropRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -55,6 +56,22 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
   }
 
   Future<void> _save() async {
+    // Ensure we have permission to write files before proceeding.
+    final permissionService = ref.read(permissionServiceProvider);
+    final allowed = await permissionService.ensureStoragePermission();
+    if (!allowed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Storage permission is required to save crop photos and data.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
     if (_selectedImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,13 +122,26 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tomato parameters saved')),
-      );
+
+      // Refresh the history list so the new set appears immediately.
+      ref.invalidate(_cropHistoryProvider);
+
+      // Clear the form fields and image.
       _formKey.currentState!.reset();
+      _soilTypeController.clear();
+      _soilPropertiesController.clear();
+      _leafColorController.clear();
+      _stemDescriptionController.clear();
+      _heightController.clear();
+      _notesController.clear();
+
       setState(() {
         _selectedImage = null;
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tomato parameters saved')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving data: $e')),

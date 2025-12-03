@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/export_service.dart';
+import '../../services/permission_service.dart';
 import '../../data/db/app_database.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
@@ -25,6 +26,20 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       _status = 'Exporting sensor data CSV...';
     });
     try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final service = ref.read(exportServiceProvider);
       final message = await service.exportSensorCsv();
       setState(() {
@@ -47,6 +62,20 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       _status = 'Exporting combined data CSV...';
     });
     try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final service = ref.read(exportServiceProvider);
       final message = await service.exportCombinedCsv();
       setState(() {
@@ -69,6 +98,20 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       _status = 'Generating PDF report...';
     });
     try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final service = ref.read(exportServiceProvider);
       final message = await service.exportPdfReport();
       setState(() {
