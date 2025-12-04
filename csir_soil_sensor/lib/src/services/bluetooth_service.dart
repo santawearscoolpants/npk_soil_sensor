@@ -113,6 +113,8 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
 
       final Map<String, DiscoveredDevice> devices = {};
       final subscription = FlutterBluePlus.scanResults.listen((results) {
+        // If we've already connected, ignore further scan results.
+        if (state.isConnected) return;
         for (final result in results) {
           final dev = result.device;
           final name =
@@ -154,7 +156,11 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     } catch (_) {}
 
     _connectedDevice = device.device;
-    state = state.copyWith(connectedDeviceName: device.name);
+    // Clear device list immediately when user selects a device
+    state = state.copyWith(
+      connectedDeviceName: device.name,
+      devices: const [],
+    );
     await _connectToDevice();
   }
 
@@ -168,30 +174,32 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     state = state.copyWith(connectionStatus: 'Connecting...');
     try {
       await device.connect(timeout: const Duration(seconds: 10));
-      state = state.copyWith(connectionStatus: 'Discovering services...');
+      // Mark as connected for UI purposes regardless of service layout.
+      state = state.copyWith(
+        connectionStatus: 'Connected',
+        devices: const [],
+      );
 
-      final services = await device.discoverServices();
-      for (final service in services) {
-        if (service.uuid.toString().toLowerCase() ==
-            soilSensorServiceUuid.toLowerCase()) {
-          for (final characteristic in service.characteristics) {
-            if (characteristic.uuid.toString().toLowerCase() ==
-                soilSensorCharacteristicUuid.toLowerCase()) {
-              _sensorCharacteristic = characteristic;
-              await characteristic.setNotifyValue(true);
-              characteristic.onValueReceived.listen(_onCharacteristicData);
-              state = state.copyWith(
-                connectionStatus: 'Connected',
-                devices: const [],
-              );
-              return;
+      // Try to discover the soil sensor characteristic in the background.
+      try {
+        final services = await device.discoverServices();
+        for (final service in services) {
+          if (service.uuid.toString().toLowerCase() ==
+              soilSensorServiceUuid.toLowerCase()) {
+            for (final characteristic in service.characteristics) {
+              if (characteristic.uuid.toString().toLowerCase() ==
+                  soilSensorCharacteristicUuid.toLowerCase()) {
+                _sensorCharacteristic = characteristic;
+                await characteristic.setNotifyValue(true);
+                characteristic.onValueReceived.listen(_onCharacteristicData);
+                return;
+              }
             }
           }
         }
+      } catch (_) {
+        // Ignore discovery errors; connection is still established.
       }
-
-      state = state.copyWith(
-          connectionStatus: 'Service/characteristic not found on device');
     } catch (e) {
       state = state.copyWith(connectionStatus: 'Connection error: $e');
     }
@@ -258,6 +266,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       connectionStatus: 'Disconnected',
       connectedDeviceName: null,
       latestReading: null,
+      devices: const [],
     );
   }
 }

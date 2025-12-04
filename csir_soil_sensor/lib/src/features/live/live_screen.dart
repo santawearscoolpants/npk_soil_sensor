@@ -81,20 +81,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (bleState.isConnected)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade600,
-                      ),
-                      onPressed: () {
-                        ref
-                            .read(bluetoothServiceProvider.notifier)
-                            .disconnect();
-                      },
-                      icon: const Icon(Icons.link_off),
-                      label: const Text('Disconnect'),
-                    ),
                 ],
               ),
             ),
@@ -107,7 +93,8 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                     height: 10,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: bleState.isConnected
+                      color: bleState.connectionStatus == 'Connected' &&
+                              bleState.connectedDeviceName != null
                           ? Colors.green
                           : bleState.connectionStatus.startsWith('Scanning') ||
                                   bleState.connectionStatus
@@ -128,6 +115,27 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                 ],
               ),
             ),
+            if (bleState.connectedDeviceName != null)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade700),
+                    ),
+                    onPressed: () {
+                      ref
+                          .read(bluetoothServiceProvider.notifier)
+                          .disconnect();
+                    },
+                    icon: const Icon(Icons.link_off),
+                    label: const Text('Disconnect from device'),
+                  ),
+                ),
+              ),
             if (bleState.devices.isNotEmpty)
               Padding(
                 padding:
