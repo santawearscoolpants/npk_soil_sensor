@@ -54,13 +54,31 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        ref
-                            .read(bluetoothServiceProvider.notifier)
-                            .scanForDevices();
-                      },
-                      icon: const Icon(Icons.bluetooth_searching),
-                      label: const Text('Scan for devices'),
+                      onPressed: bleState.connectionStatus
+                              .startsWith('Scanning')
+                          ? null
+                          : () {
+                              ref
+                                  .read(bluetoothServiceProvider.notifier)
+                                  .scanForDevices();
+                            },
+                      icon: bleState.connectionStatus
+                              .startsWith('Scanning')
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.bluetooth_searching),
+                      label: Text(
+                        bleState.connectionStatus.startsWith('Scanning')
+                            ? 'Scanning...'
+                            : 'Scan for devices',
+                      ),
                     ),
                   ),
                 ],

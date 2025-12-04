@@ -107,29 +107,38 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       }
 
       state = state.copyWith(
-        connectionStatus: 'Scanning...',
+        connectionStatus: 'Scanning for devices...',
         devices: [],
       );
 
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
-
-      final scanResults = await FlutterBluePlus.scanResults.first;
       final Map<String, DiscoveredDevice> devices = {};
-      for (final result in scanResults) {
-        final dev = result.device;
-        final name = dev.platformName.isNotEmpty
-            ? dev.platformName
-            : dev.remoteId.str;
-        devices[dev.remoteId.str] = DiscoveredDevice(device: dev, name: name);
-      }
+      final subscription = FlutterBluePlus.scanResults.listen((results) {
+        for (final result in results) {
+          final dev = result.device;
+          final name =
+              dev.platformName.isNotEmpty ? dev.platformName : dev.remoteId.str;
+          devices[dev.remoteId.str] =
+              DiscoveredDevice(device: dev, name: name);
+        }
+        if (devices.isNotEmpty) {
+          state = state.copyWith(
+            devices: devices.values.toList(),
+          );
+        }
+      });
+
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+      // Wait for the scan to finish (timeout handled by startScan).
+      await Future.delayed(const Duration(seconds: 10));
+      await FlutterBluePlus.stopScan();
+      await subscription.cancel();
 
       state = state.copyWith(
         connectionStatus: devices.isEmpty
-            ? 'No BLE devices found'
+            ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
             : 'Tap a device to connect',
         devices: devices.values.toList(),
       );
-      await FlutterBluePlus.stopScan();
     } catch (e) {
       state = state.copyWith(connectionStatus: 'Error: $e');
     }
