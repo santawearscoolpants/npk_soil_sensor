@@ -81,6 +81,20 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  if (bleState.isConnected)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                      ),
+                      onPressed: () {
+                        ref
+                            .read(bluetoothServiceProvider.notifier)
+                            .disconnect();
+                      },
+                      icon: const Icon(Icons.link_off),
+                      label: const Text('Disconnect'),
+                    ),
                 ],
               ),
             ),

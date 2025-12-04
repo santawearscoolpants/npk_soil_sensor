@@ -133,10 +133,13 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       await FlutterBluePlus.stopScan();
       await subscription.cancel();
 
+      final connected = state.isConnected;
       state = state.copyWith(
-        connectionStatus: devices.isEmpty
-            ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
-            : 'Tap a device to connect',
+        connectionStatus: connected
+            ? state.connectionStatus
+            : devices.isEmpty
+                ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
+                : 'Tap a device to connect',
         devices: devices.values.toList(),
       );
     } catch (e) {
@@ -145,6 +148,11 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   }
 
   Future<void> connectToDevice(DiscoveredDevice device) async {
+    // Stop any ongoing scan when user chooses a device.
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+
     _connectedDevice = device.device;
     state = state.copyWith(connectedDeviceName: device.name);
     await _connectToDevice();
@@ -174,6 +182,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
               characteristic.onValueReceived.listen(_onCharacteristicData);
               state = state.copyWith(
                 connectionStatus: 'Connected',
+                devices: const [],
               );
               return;
             }
@@ -234,6 +243,21 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
             ? drift.Value(cropParamsId)
             : const drift.Value.absent(),
       ),
+    );
+  }
+
+  Future<void> disconnect() async {
+    try {
+      await _connectedDevice?.disconnect();
+    } catch (_) {
+      // ignore disconnect errors
+    }
+    _connectedDevice = null;
+    _sensorCharacteristic = null;
+    state = state.copyWith(
+      connectionStatus: 'Disconnected',
+      connectedDeviceName: null,
+      latestReading: null,
     );
   }
 }
