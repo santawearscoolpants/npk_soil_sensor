@@ -46,22 +46,42 @@ class LiveReading {
   }
 }
 
+class DiscoveredDevice {
+  DiscoveredDevice({
+    required this.device,
+    required this.name,
+  });
+
+  final BluetoothDevice device;
+  final String name;
+}
+
 class BluetoothStateModel {
   const BluetoothStateModel({
     required this.connectionStatus,
     this.latestReading,
+    this.devices = const [],
+    this.connectedDeviceName,
   });
 
   final String connectionStatus;
   final LiveReading? latestReading;
+  final List<DiscoveredDevice> devices;
+  final String? connectedDeviceName;
+
+  bool get isConnected => connectionStatus.startsWith('Connected');
 
   BluetoothStateModel copyWith({
     String? connectionStatus,
     LiveReading? latestReading,
+    List<DiscoveredDevice>? devices,
+    String? connectedDeviceName,
   }) {
     return BluetoothStateModel(
       connectionStatus: connectionStatus ?? this.connectionStatus,
       latestReading: latestReading ?? this.latestReading,
+      devices: devices ?? this.devices,
+      connectedDeviceName: connectedDeviceName ?? this.connectedDeviceName,
     );
   }
 }
@@ -75,27 +95,40 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _sensorCharacteristic;
 
-  Future<void> scanAndConnect() async {
-    state = state.copyWith(connectionStatus: 'Scanning...');
+  Future<void> scanForDevices() async {
+    state = state.copyWith(
+      connectionStatus: 'Scanning...',
+      devices: [],
+    );
     try {
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
 
       final scanResults = await FlutterBluePlus.scanResults.first;
+      final Map<String, DiscoveredDevice> devices = {};
       for (final result in scanResults) {
-        final name = result.device.platformName;
-        if (name.startsWith(soilSensorDeviceNamePrefix)) {
-          _connectedDevice = result.device;
-          await FlutterBluePlus.stopScan();
-          await _connectToDevice();
-          return;
-        }
+        final dev = result.device;
+        final name = dev.platformName.isNotEmpty
+            ? dev.platformName
+            : dev.remoteId.str;
+        devices[dev.remoteId.str] = DiscoveredDevice(device: dev, name: name);
       }
 
+      state = state.copyWith(
+        connectionStatus: devices.isEmpty
+            ? 'No BLE devices found'
+            : 'Tap a device to connect',
+        devices: devices.values.toList(),
+      );
       await FlutterBluePlus.stopScan();
-      state = state.copyWith(connectionStatus: 'Device not found');
     } catch (e) {
       state = state.copyWith(connectionStatus: 'Error: $e');
     }
+  }
+
+  Future<void> connectToDevice(DiscoveredDevice device) async {
+    _connectedDevice = device.device;
+    state = state.copyWith(connectedDeviceName: device.name);
+    await _connectToDevice();
   }
 
   Future<void> _connectToDevice() async {
@@ -120,7 +153,9 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
               _sensorCharacteristic = characteristic;
               await characteristic.setNotifyValue(true);
               characteristic.onValueReceived.listen(_onCharacteristicData);
-              state = state.copyWith(connectionStatus: 'Connected');
+              state = state.copyWith(
+                connectionStatus: 'Connected',
+              );
               return;
             }
           }

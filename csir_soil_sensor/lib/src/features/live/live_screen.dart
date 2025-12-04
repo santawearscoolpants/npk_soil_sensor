@@ -57,10 +57,10 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                       onPressed: () {
                         ref
                             .read(bluetoothServiceProvider.notifier)
-                            .scanAndConnect();
+                            .scanForDevices();
                       },
                       icon: const Icon(Icons.bluetooth_searching),
-                      label: const Text('Scan & Connect'),
+                      label: const Text('Scan for devices'),
                     ),
                   ),
                 ],
@@ -68,14 +68,69 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Status: ${bleState.connectionStatus}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: bleState.isConnected
+                          ? Colors.green
+                          : bleState.connectionStatus.startsWith('Scanning') ||
+                                  bleState.connectionStatus
+                                      .startsWith('Connecting')
+                              ? Colors.orange
+                              : Colors.red,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      bleState.connectedDeviceName != null
+                          ? 'Status: ${bleState.connectionStatus} (${bleState.connectedDeviceName})'
+                          : 'Status: ${bleState.connectionStatus}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (bleState.devices.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Tap a device to connect:',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            if (bleState.devices.isNotEmpty)
+              SizedBox(
+                height: 160,
+                child: ListView.builder(
+                  itemCount: bleState.devices.length,
+                  itemBuilder: (context, index) {
+                    final d = bleState.devices[index];
+                    return ListTile(
+                      leading: const Icon(Icons.bluetooth),
+                      title: Text(d.name),
+                      subtitle: Text(d.device.remoteId.str),
+                      onTap: () {
+                        ref
+                            .read(bluetoothServiceProvider.notifier)
+                            .connectToDevice(d);
+                      },
+                    );
+                  },
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
