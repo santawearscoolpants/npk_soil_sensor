@@ -96,11 +96,21 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   BluetoothCharacteristic? _sensorCharacteristic;
 
   Future<void> scanForDevices() async {
-    state = state.copyWith(
-      connectionStatus: 'Scanning...',
-      devices: [],
-    );
     try {
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        state = state.copyWith(
+          connectionStatus: 'Bluetooth is off. Please turn it on.',
+          devices: [],
+        );
+        return;
+      }
+
+      state = state.copyWith(
+        connectionStatus: 'Scanning...',
+        devices: [],
+      );
+
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
 
       final scanResults = await FlutterBluePlus.scanResults.first;
