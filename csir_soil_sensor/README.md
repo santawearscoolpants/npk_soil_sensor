@@ -72,12 +72,25 @@ cd ..
 flutter run
 ```
 
+> **Note (BLE on iOS)**  
+> - Real BLE scanning/connection only works on a **physical iOS device**, not the simulator.  
+> - The first scan/connection will trigger the iOS Bluetooth permission dialog (make sure you accept).
+
 ### Demo mode vs real BLE
 
 - On the **Live Data** tab, tap the bug icon in the app bar to inject a mock reading using the same JSON format as the ESP32.
 - For real devices, ensure:
   - The ESP32 advertises a name starting with `FARM-ESP32`.
   - The BLE service/characteristic UUIDs and JSON payload match the constants in `src/services/bluetooth_constants.dart`.
+
+On the Live Data screen:
+
+- Tap **Scan for devices** to start a BLE scan (Android + iOS).  
+- A list of nearby BLE devices appears; tap the correct device to connect.  
+- The status line shows:
+  - A **green dot** and `Connected (device name)` when connected.
+  - Orange while **Scanning/Connecting**.
+  - Red with an explanatory message if disconnected or if Bluetooth is off.
 
 ### Data export
 
