@@ -159,7 +159,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     }
   }
 
-  Future<void> saveLatestReading() async {
+  Future<void> saveLatestReading([int? cropParamsId]) async {
     final latest = state.latestReading;
     if (latest == null) return;
 
@@ -176,7 +176,9 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
         phosphorus: latest.phosphorus,
         potassium: latest.potassium,
         salinity: latest.salinity,
-        cropParamsId: const drift.Value.absent(),
+        cropParamsId: cropParamsId != null
+            ? drift.Value(cropParamsId)
+            : const drift.Value.absent(),
       ),
     );
   }
