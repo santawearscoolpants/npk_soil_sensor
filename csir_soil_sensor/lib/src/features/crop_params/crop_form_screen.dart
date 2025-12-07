@@ -107,8 +107,24 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         await imagesDir.create(recursive: true);
       }
 
-      final timeStamp = now.millisecondsSinceEpoch;
-      final fileName = 'tomato_${cropId}_$timeStamp${p.extension(_selectedImage!.path)}';
+      // Get all existing images to determine next sequential number
+      final allImages = await repo.getAllImages();
+      int maxImageNumber = 0;
+      for (final img in allImages) {
+        // Extract number from filename like "tomato_001.jpg"
+        final match = RegExp(r'tomato_(\d+)').firstMatch(img.relabelledFileName);
+        if (match != null) {
+          final num = int.tryParse(match.group(1) ?? '0') ?? 0;
+          if (num > maxImageNumber) {
+            maxImageNumber = num;
+          }
+        }
+      }
+
+      // Generate next sequential number (001, 002, etc.)
+      final nextNumber = maxImageNumber + 1;
+      final imageExtension = p.extension(_selectedImage!.path);
+      final fileName = 'tomato_${nextNumber.toString().padLeft(3, '0')}$imageExtension';
       final destPath = p.join(imagesDir.path, fileName);
       final savedFile = await _selectedImage!.copy(destPath);
 

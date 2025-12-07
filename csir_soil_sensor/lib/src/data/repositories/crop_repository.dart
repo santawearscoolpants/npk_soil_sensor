@@ -32,6 +32,10 @@ class CropRepository {
           ..where((tbl) => tbl.cropParamsId.equals(cropParamsId)))
         .get();
   }
+
+  Future<List<CropImage>> getAllImages() {
+    return _db.select(_db.cropImages).get();
+  }
 }
 
 

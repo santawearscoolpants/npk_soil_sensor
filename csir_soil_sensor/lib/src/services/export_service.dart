@@ -18,6 +18,8 @@ abstract class ExportService {
   Future<String> exportSensorCsv();
   Future<String> exportCombinedCsv();
   Future<String> exportPdfReport();
+  Future<String> exportImages();
+  Future<String> exportCropParamsCsv();
 }
 
 class LocalExportService implements ExportService {
@@ -61,7 +63,7 @@ class LocalExportService implements ExportService {
             r.phosphorus,
             r.potassium,
             r.salinity,
-            r.cropParamsId,
+            r.cropParamsId ?? '', // Handle null as empty string
           ]),
     ];
 
@@ -80,6 +82,15 @@ class LocalExportService implements ExportService {
     final readings = await sensorRepo.getAllReadings();
     final cropParamsList = await cropRepo.getAllCropParams();
     final cropParamsById = {for (final c in cropParamsList) c.id: c};
+
+    // Get all images grouped by cropParamsId
+    final imagesByCropId = <int, List<String>>{};
+    for (final crop in cropParamsList) {
+      final images = await cropRepo.getImagesForCrop(crop.id);
+      imagesByCropId[crop.id] = images
+          .map((img) => img.relabelledFileName)
+          .toList();
+    }
 
     final rows = <List<dynamic>>[
       [
@@ -100,9 +111,13 @@ class LocalExportService implements ExportService {
         'stemDescription',
         'heightCm',
         'notes',
+        'imageFilenames',
       ],
       ...readings.map((r) {
         final cp = r.cropParamsId != null ? cropParamsById[r.cropParamsId] : null;
+        final imageFilenames = r.cropParamsId != null
+            ? (imagesByCropId[r.cropParamsId] ?? []).join('; ')
+            : '';
         return [
           r.id,
           r.timestamp.toIso8601String(),
@@ -114,13 +129,14 @@ class LocalExportService implements ExportService {
           r.phosphorus,
           r.potassium,
           r.salinity,
-          r.cropParamsId,
-          cp?.soilType,
-          cp?.soilProperties,
-          cp?.leafColor,
-          cp?.stemDescription,
-          cp?.heightCm,
-          cp?.notes,
+          r.cropParamsId ?? '', // Handle null as empty string
+          cp?.soilType ?? '',
+          cp?.soilProperties ?? '',
+          cp?.leafColor ?? '',
+          cp?.stemDescription ?? '',
+          cp?.heightCm ?? '',
+          cp?.notes ?? '',
+          imageFilenames,
         ];
       }),
     ];
@@ -236,6 +252,79 @@ class LocalExportService implements ExportService {
       filename: 'soil_report.pdf',
     );
     return 'PDF report generated and share sheet opened.';
+  }
+
+  @override
+  Future<String> exportImages() async {
+    final cropRepo = CropRepository(_db);
+    final allCropParams = await cropRepo.getAllCropParams();
+
+    if (allCropParams.isEmpty) {
+      return 'No crop parameters found. No images to export.';
+    }
+
+    final List<XFile> imageFiles = [];
+    for (final crop in allCropParams) {
+      final images = await cropRepo.getImagesForCrop(crop.id);
+      for (final image in images) {
+        final file = File(image.filePath);
+        if (await file.exists()) {
+          imageFiles.add(XFile(file.path));
+        }
+      }
+    }
+
+    if (imageFiles.isEmpty) {
+      return 'No images found to export.';
+    }
+
+    await Share.shareXFiles(imageFiles, text: 'Crop parameter images');
+    return '${imageFiles.length} image(s) exported and share sheet opened.';
+  }
+
+  @override
+  Future<String> exportCropParamsCsv() async {
+    final cropRepo = CropRepository(_db);
+    final allCropParams = await cropRepo.getAllCropParams();
+
+    final rows = <List<dynamic>>[
+      [
+        'id',
+        'createdAt',
+        'soilType',
+        'soilProperties',
+        'leafColor',
+        'stemDescription',
+        'heightCm',
+        'notes',
+        'imageFilenames',
+      ],
+      ...await Future.wait(
+        allCropParams.map((crop) async {
+          final images = await cropRepo.getImagesForCrop(crop.id);
+          final imageFilenames = images
+              .map((img) => img.relabelledFileName)
+              .join('; ');
+          return [
+            crop.id,
+            crop.createdAt.toIso8601String(),
+            crop.soilType,
+            crop.soilProperties,
+            crop.leafColor,
+            crop.stemDescription,
+            crop.heightCm,
+            crop.notes ?? '',
+            imageFilenames,
+          ];
+        }),
+      ),
+    ];
+
+    final csvData = const ListToCsvConverter().convert(rows);
+    final file = await _createTempFile('crop_parameters.csv');
+    await file.writeAsString(csvData);
+    await Share.shareXFiles([XFile(file.path)]);
+    return 'Crop parameters CSV exported and share sheet opened.';
   }
 }
 

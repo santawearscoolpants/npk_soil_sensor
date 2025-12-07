@@ -128,6 +128,78 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     }
   }
 
+  Future<void> _exportCropParamsCsv() async {
+    setState(() {
+      _busy = true;
+      _status = 'Exporting crop parameters CSV...';
+    });
+    try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      final service = ref.read(exportServiceProvider);
+      final message = await service.exportCropParamsCsv();
+      setState(() {
+        _status = message;
+      });
+    } catch (e) {
+      setState(() {
+        _status = 'Error exporting crop parameters CSV: $e';
+      });
+    } finally {
+      setState(() {
+        _busy = false;
+      });
+    }
+  }
+
+  Future<void> _exportImages() async {
+    setState(() {
+      _busy = true;
+      _status = 'Exporting images...';
+    });
+    try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      final service = ref.read(exportServiceProvider);
+      final message = await service.exportImages();
+      setState(() {
+        _status = message;
+      });
+    } catch (e) {
+      setState(() {
+        _status = 'Error exporting images: $e';
+      });
+    } finally {
+      setState(() {
+        _busy = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -161,6 +233,22 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                 child: ElevatedButton(
                   onPressed: _busy ? null : _exportPdfReport,
                   child: const Text('Export PDF Report'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _busy ? null : _exportCropParamsCsv,
+                  child: const Text('Export Crop Parameters (CSV)'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _busy ? null : _exportImages,
+                  child: const Text('Export Images'),
                 ),
               ),
               const SizedBox(height: 24),
