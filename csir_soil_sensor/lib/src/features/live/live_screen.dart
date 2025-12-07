@@ -115,7 +115,8 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                 ],
               ),
             ),
-            if (bleState.connectedDeviceName != null)
+            if (bleState.connectionStatus == 'Connected' &&
+                bleState.connectedDeviceName != null)
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

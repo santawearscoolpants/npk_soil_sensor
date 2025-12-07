@@ -113,8 +113,8 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
 
       final Map<String, DiscoveredDevice> devices = {};
       final subscription = FlutterBluePlus.scanResults.listen((results) {
-        // If we've already connected, ignore further scan results.
-        if (state.isConnected) return;
+        // If we've already selected a device (even if not fully connected yet), ignore further scan results.
+        if (state.connectedDeviceName != null) return;
         for (final result in results) {
           final dev = result.device;
           final name =
