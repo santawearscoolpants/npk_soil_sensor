@@ -95,6 +95,34 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _sensorCharacteristic;
 
+  /// Normalizes a UUID string to handle both short and full formats.
+  /// Returns the short form (4 hex digits) for comparison.
+  /// For full UUIDs like "0000F001-0000-1000-8000-00805F9B34FB", extracts "f001".
+  /// For short UUIDs like "f001", returns as is.
+  String _normalizeUuid(String uuid) {
+    final lower = uuid.toLowerCase().replaceAll('-', '').replaceAll(':', '');
+    
+    // If it's a full 128-bit UUID (32 hex chars), extract the 16-bit part
+    if (lower.length == 32) {
+      // Standard BLE base UUID: 0000XXXX-0000-1000-8000-00805F9B34FB
+      // The 16-bit UUID is at positions 4-7 (characters 4-8 in 0-indexed)
+      return lower.substring(4, 8);
+    }
+    
+    // If it's already short form (4 hex digits), return as is
+    if (lower.length == 4) {
+      return lower;
+    }
+    
+    // For other formats, try to extract last 4 digits
+    return lower.length >= 4 ? lower.substring(lower.length - 4) : lower;
+  }
+
+  /// Checks if two UUIDs match (handles both short and full formats).
+  bool _uuidMatches(String uuid1, String uuid2) {
+    return _normalizeUuid(uuid1) == _normalizeUuid(uuid2);
+  }
+
   Future<void> scanForDevices() async {
     try {
       final adapterState = await FlutterBluePlus.adapterState.first;
@@ -183,22 +211,63 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       // Try to discover the soil sensor characteristic in the background.
       try {
         final services = await device.discoverServices();
+        print('Discovered ${services.length} BLE services');
+        
+        bool serviceFound = false;
+        bool characteristicFound = false;
+        
         for (final service in services) {
-          if (service.uuid.toString().toLowerCase() ==
-              soilSensorServiceUuid.toLowerCase()) {
+          final serviceUuid = service.uuid.toString();
+          print('Service UUID: $serviceUuid');
+          
+          if (_uuidMatches(serviceUuid, soilSensorServiceUuid)) {
+            serviceFound = true;
+            print('Found matching service!');
+            print('Service has ${service.characteristics.length} characteristics');
+            
             for (final characteristic in service.characteristics) {
-              if (characteristic.uuid.toString().toLowerCase() ==
-                  soilSensorCharacteristicUuid.toLowerCase()) {
+              final charUuid = characteristic.uuid.toString();
+              print('Characteristic UUID: $charUuid');
+              
+              if (_uuidMatches(charUuid, soilSensorCharacteristicUuid)) {
+                characteristicFound = true;
+                print('Found matching characteristic!');
+                
                 _sensorCharacteristic = characteristic;
+                
+                // Enable notifications
                 await characteristic.setNotifyValue(true);
-                characteristic.onValueReceived.listen(_onCharacteristicData);
+                print('Notifications enabled');
+                
+                // Subscribe to value updates
+                characteristic.onValueReceived.listen(
+                  _onCharacteristicData,
+                  onError: (error) {
+                    print('Error receiving BLE data: $error');
+                    state = state.copyWith(
+                      connectionStatus: 'Data receive error: $error',
+                    );
+                  },
+                );
+                
+                print('Listening for sensor data...');
                 return;
               }
             }
           }
         }
-      } catch (_) {
-        // Ignore discovery errors; connection is still established.
+        
+        if (!serviceFound) {
+          print('Warning: Service ${soilSensorServiceUuid} not found');
+        } else if (!characteristicFound) {
+          print('Warning: Characteristic ${soilSensorCharacteristicUuid} not found');
+        }
+      } catch (e) {
+        print('Service discovery error: $e');
+        // Don't fail the connection, but log the error
+        state = state.copyWith(
+          connectionStatus: 'Connected (service discovery failed: $e)',
+        );
       }
     } catch (e) {
       state = state.copyWith(connectionStatus: 'Connection error: $e');
@@ -207,11 +276,28 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
 
   void _onCharacteristicData(List<int> data) {
     try {
+      if (data.isEmpty) {
+        print('Received empty BLE data');
+        return;
+      }
+      
       final payload = utf8.decode(data);
+      print('Received BLE data: $payload');
+      
       final jsonMap = jsonDecode(payload) as Map<String, dynamic>;
+      print('Parsed JSON: $jsonMap');
+      
       final reading = LiveReading.fromJson(jsonMap);
-      state = state.copyWith(latestReading: reading);
-    } catch (e) {
+      print('Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}');
+      
+      state = state.copyWith(
+        latestReading: reading,
+        connectionStatus: 'Connected', // Ensure status stays "Connected"
+      );
+    } catch (e, stackTrace) {
+      print('Error parsing BLE data: $e');
+      print('Stack trace: $stackTrace');
+      print('Raw data: ${data.map((b) => b.toRadixString(16)).join(' ')}');
       state = state.copyWith(connectionStatus: 'Parse error: $e');
     }
   }
