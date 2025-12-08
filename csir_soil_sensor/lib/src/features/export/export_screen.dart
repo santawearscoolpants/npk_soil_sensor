@@ -5,6 +5,7 @@ import '../../services/permission_service.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../data/repositories/crop_repository.dart';
+import '../../services/session_store.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -21,6 +22,33 @@ class ExportScreen extends ConsumerStatefulWidget {
 class _ExportScreenState extends ConsumerState<ExportScreen> {
   String _status = 'No export yet.';
   bool _busy = false;
+  bool _loadingSessions = true;
+  List<ReadingSession> _sessions = [];
+  int? _selectedSessionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    final store = ref.read(sessionStoreProvider);
+    final sessions = await store.loadSessions();
+    if (!mounted) return;
+    setState(() {
+      _sessions = sessions;
+      _loadingSessions = false;
+    });
+  }
+
+  List<int>? _selectedReadingIds() {
+    if (_selectedSessionId == null) return null;
+    final session =
+        _sessions.firstWhere((s) => s.id == _selectedSessionId, orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []));
+    if (session.id == -1) return null;
+    return session.readingIds;
+  }
 
   Future<void> _exportSensorCsv() async {
     setState(() {
@@ -43,7 +71,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         return;
       }
       final service = ref.read(exportServiceProvider);
-      final message = await service.exportSensorCsv();
+      final message = await service.exportSensorCsv(
+        readingIds: _selectedReadingIds(),
+      );
       setState(() {
         _status = message;
       });
@@ -79,7 +109,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         return;
       }
       final service = ref.read(exportServiceProvider);
-      final message = await service.exportCombinedCsv();
+      final message = await service.exportCombinedCsv(
+        readingIds: _selectedReadingIds(),
+      );
       setState(() {
         _status = message;
       });
@@ -237,12 +269,16 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       final db = ref.read(appDatabaseProvider);
       final sensorRepo = SensorRepository(db);
       final cropRepo = CropRepository(db);
+      final sessionStore = ref.read(sessionStoreProvider);
 
       // Delete all sensor readings
       await sensorRepo.deleteAllReadings();
       
       // Delete all crop parameters (this also deletes associated images from DB)
       await cropRepo.deleteAllCropParams();
+
+      // Clear session groupings
+      await sessionStore.saveSessions([]);
 
       // Note: Physical image files would need to be deleted separately if needed
       // For now, we're just clearing the database references
@@ -291,6 +327,52 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_loadingSessions)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(minHeight: 4),
+                ),
+              if (!_loadingSessions)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Select session to export (or All readings):',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int?>(
+                      value: _selectedSessionId,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('All readings'),
+                        ),
+                        ..._sessions.map(
+                          (s) => DropdownMenuItem<int?>(
+                            value: s.id,
+                            child: Text(
+                              'Session #${s.id} — ${s.readingIds.length} readings (${s.createdAt.toLocal().toString().split(" ").first})',
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedSessionId = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(

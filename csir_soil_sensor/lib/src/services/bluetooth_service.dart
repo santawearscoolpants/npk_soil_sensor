@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/db/app_database.dart';
 import '../data/repositories/sensor_repository.dart';
 import 'bluetooth_constants.dart';
+import 'session_store.dart';
 
 class LiveReading {
   LiveReading({
@@ -62,12 +63,14 @@ class BluetoothStateModel {
     this.latestReading,
     this.devices = const [],
     this.connectedDeviceName,
+    this.pendingCount = 0,
   });
 
   final String connectionStatus;
   final LiveReading? latestReading;
   final List<DiscoveredDevice> devices;
   final String? connectedDeviceName;
+  final int pendingCount;
 
   bool get isConnected => connectionStatus.startsWith('Connected');
 
@@ -76,24 +79,34 @@ class BluetoothStateModel {
     LiveReading? latestReading,
     List<DiscoveredDevice>? devices,
     String? connectedDeviceName,
+    int? pendingCount,
   }) {
     return BluetoothStateModel(
       connectionStatus: connectionStatus ?? this.connectionStatus,
       latestReading: latestReading ?? this.latestReading,
       devices: devices ?? this.devices,
       connectedDeviceName: connectedDeviceName ?? this.connectedDeviceName,
+      pendingCount: pendingCount ?? this.pendingCount,
     );
   }
 }
 
 class BluetoothService extends StateNotifier<BluetoothStateModel> {
-  BluetoothService(this._sensorRepository)
+  BluetoothService(this._sensorRepository, this._sessionStore)
       : super(const BluetoothStateModel(connectionStatus: 'Disconnected'));
 
   final SensorRepository _sensorRepository;
+  final SessionStore _sessionStore;
 
   BluetoothDevice? _connectedDevice;
+  // ignore: unused_field
   BluetoothCharacteristic? _sensorCharacteristic;
+  final List<int> _pendingReadingIds = [];
+  int? _activeCropParamsId;
+
+  void setActiveCropParamsId(int? id) {
+    _activeCropParamsId = id;
+  }
 
   /// Normalizes a UUID string to handle both short and full formats.
   /// Returns the short form (4 hex digits) for comparison.
@@ -241,7 +254,9 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
                 
                 // Subscribe to value updates
                 characteristic.onValueReceived.listen(
-                  _onCharacteristicData,
+                  (data) {
+                    _onCharacteristicData(data);
+                  },
                   onError: (error) {
                     print('Error receiving BLE data: $error');
                     state = state.copyWith(
@@ -274,7 +289,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     }
   }
 
-  void _onCharacteristicData(List<int> data) {
+  Future<void> _onCharacteristicData(List<int> data) async {
     try {
       if (data.isEmpty) {
         print('Received empty BLE data');
@@ -289,10 +304,31 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       
       final reading = LiveReading.fromJson(jsonMap);
       print('Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}');
-      
+
+      // Persist immediately and track pending batch ids
+      final id = await _sensorRepository.insertReading(
+        SensorReadingsCompanion.insert(
+          timestamp:
+              DateTime.fromMillisecondsSinceEpoch(reading.timestamp * 1000),
+          moisture: reading.moisture,
+          ec: reading.ec,
+          temperature: reading.temperature,
+          ph: reading.ph,
+          nitrogen: reading.nitrogen,
+          phosphorus: reading.phosphorus,
+          potassium: reading.potassium,
+          salinity: reading.salinity,
+          cropParamsId: _activeCropParamsId != null
+              ? drift.Value(_activeCropParamsId!)
+              : const drift.Value.absent(),
+        ),
+      );
+      _pendingReadingIds.add(id);
+
       state = state.copyWith(
         latestReading: reading,
         connectionStatus: 'Connected', // Ensure status stays "Connected"
+        pendingCount: _pendingReadingIds.length,
       );
     } catch (e, stackTrace) {
       print('Error parsing BLE data: $e');
@@ -316,28 +352,12 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     }
   }
 
-  Future<void> saveLatestReading([int? cropParamsId]) async {
-    final latest = state.latestReading;
-    if (latest == null) return;
-
-    await _sensorRepository.insertReading(
-      SensorReadingsCompanion.insert(
-        timestamp: DateTime.fromMillisecondsSinceEpoch(
-          latest.timestamp * 1000,
-        ),
-        moisture: latest.moisture,
-        ec: latest.ec,
-        temperature: latest.temperature,
-        ph: latest.ph,
-        nitrogen: latest.nitrogen,
-        phosphorus: latest.phosphorus,
-        potassium: latest.potassium,
-        salinity: latest.salinity,
-        cropParamsId: cropParamsId != null
-            ? drift.Value(cropParamsId)
-            : const drift.Value.absent(),
-      ),
-    );
+  Future<ReadingSession?> savePendingReadings() async {
+    if (_pendingReadingIds.isEmpty) return null;
+    final session = await _sessionStore.addSession(_pendingReadingIds);
+    _pendingReadingIds.clear();
+    state = state.copyWith(pendingCount: 0);
+    return session;
   }
 
   Future<void> disconnect() async {
@@ -348,11 +368,13 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     }
     _connectedDevice = null;
     _sensorCharacteristic = null;
+    _pendingReadingIds.clear();
     state = state.copyWith(
       connectionStatus: 'Disconnected',
       connectedDeviceName: null,
       latestReading: null,
       devices: const [],
+      pendingCount: 0,
     );
   }
 }
@@ -361,7 +383,8 @@ final bluetoothServiceProvider =
     StateNotifierProvider<BluetoothService, BluetoothStateModel>((ref) {
   final db = ref.watch(appDatabaseProvider);
   final repo = SensorRepository(db);
-  return BluetoothService(repo);
+  final sessions = ref.read(sessionStoreProvider);
+  return BluetoothService(repo, sessions);
 });
 
 

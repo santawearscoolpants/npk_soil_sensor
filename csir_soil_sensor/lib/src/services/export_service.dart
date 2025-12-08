@@ -15,8 +15,8 @@ import '../data/repositories/sensor_repository.dart';
 /// Abstraction for export logic so we can plug in other backends later
 /// (Google Drive, external DB, etc.).
 abstract class ExportService {
-  Future<String> exportSensorCsv();
-  Future<String> exportCombinedCsv();
+  Future<String> exportSensorCsv({List<int>? readingIds});
+  Future<String> exportCombinedCsv({List<int>? readingIds});
   Future<String> exportPdfReport();
   Future<String> exportImages();
   Future<String> exportCropParamsCsv();
@@ -34,9 +34,11 @@ class LocalExportService implements ExportService {
   }
 
   @override
-  Future<String> exportSensorCsv() async {
+  Future<String> exportSensorCsv({List<int>? readingIds}) async {
     final sensorRepo = SensorRepository(_db);
-    final readings = await sensorRepo.getAllReadings();
+    final readings = readingIds == null
+        ? await sensorRepo.getAllReadings()
+        : await sensorRepo.getReadingsByIds(readingIds);
 
     final rows = <List<dynamic>>[
       [
@@ -75,11 +77,13 @@ class LocalExportService implements ExportService {
   }
 
   @override
-  Future<String> exportCombinedCsv() async {
+  Future<String> exportCombinedCsv({List<int>? readingIds}) async {
     final sensorRepo = SensorRepository(_db);
     final cropRepo = CropRepository(_db);
 
-    final readings = await sensorRepo.getAllReadings();
+    final readings = readingIds == null
+        ? await sensorRepo.getAllReadings()
+        : await sensorRepo.getReadingsByIds(readingIds);
     final cropParamsList = await cropRepo.getAllCropParams();
     final cropParamsById = {for (final c in cropParamsList) c.id: c};
 

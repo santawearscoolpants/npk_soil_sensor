@@ -1,3 +1,4 @@
+// ignore: unused_import
 import 'package:drift/drift.dart';
 
 import '../db/app_database.dart';
@@ -9,6 +10,13 @@ class SensorRepository {
 
   Future<int> insertReading(SensorReadingsCompanion companion) {
     return _db.into(_db.sensorReadings).insert(companion);
+  }
+
+  Future<List<SensorReading>> getReadingsByIds(List<int> ids) {
+    if (ids.isEmpty) return Future.value([]);
+    return (_db.select(_db.sensorReadings)
+          ..where((tbl) => tbl.id.isIn(ids)))
+        .get();
   }
 
   Future<List<SensorReading>> getAllReadings() {

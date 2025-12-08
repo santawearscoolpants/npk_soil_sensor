@@ -199,6 +199,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                         setState(() {
                           _selectedCropParamsId = value;
                         });
+                            ref
+                                .read(bluetoothServiceProvider.notifier)
+                                .setActiveCropParamsId(value);
                       },
                     ),
                   ),
@@ -217,26 +220,29 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: ElevatedButton.icon(
-                onPressed: bleState.latestReading == null
+                onPressed: bleState.pendingCount == 0
                     ? null
                     : () async {
-                        await ref
+                        final session = await ref
                             .read(bluetoothServiceProvider.notifier)
-                            .saveLatestReading(_selectedCropParamsId);
+                            .savePendingReadings();
                         if (context.mounted) {
+                          final count = session?.readingIds.length ?? 0;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                _selectedCropParamsId != null
-                                    ? 'Reading saved and linked to crop set #$_selectedCropParamsId'
-                                    : 'Reading saved locally',
+                                'Saved $count readings as session #${session?.id ?? ''}',
                               ),
                             ),
                           );
                         }
                       },
                 icon: const Icon(Icons.save),
-                label: const Text('Save Reading'),
+                label: Text(
+                  bleState.pendingCount == 0
+                      ? 'No readings to save'
+                      : 'Save readings (${bleState.pendingCount})',
+                ),
               ),
             ),
           ],
