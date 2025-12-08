@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/thresholds.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../services/bluetooth_service.dart';
-import '../../services/mock_data.dart';
 
 final _cropParamsProvider =
     FutureProvider.autoDispose<List<CropParam>>((ref) async {
@@ -33,18 +31,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Live Data'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              onPressed: () {
-                // Demo mode: inject a mock reading event
-                ref
-                    .read(bluetoothServiceProvider.notifier)
-                    .emitMockReading(generateMockPayload());
-              },
-              tooltip: 'Demo reading',
-            ),
-          ],
         ),
         body: Column(
           children: [
@@ -279,27 +265,12 @@ class _LiveReadingCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Latest Reading',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Tooltip(
-                    message:
-                        'Green = ideal range\nAmber = acceptable\nRed = needs attention',
-                    child: Icon(
-                      Icons.info_outline,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ],
+              Text(
+                'Latest Reading',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
@@ -314,89 +285,41 @@ class _LiveReadingCard extends StatelessWidget {
                   _MetricChip(
                     label: 'Moisture',
                     value: '${reading.moisture.toStringAsFixed(1)} %',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.moisture,
-                      TomatoThresholds.moistureLow,
-                      TomatoThresholds.moistureHigh,
-                    ),
-                    tooltip: TomatoThresholds.moistureTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'EC',
                     value: '${reading.ec.toStringAsFixed(2)} mS/cm',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.ec,
-                      TomatoThresholds.ecLow,
-                      TomatoThresholds.ecHigh,
-                    ),
-                    tooltip: TomatoThresholds.ecTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'Temperature',
                     value: '${reading.temperature.toStringAsFixed(1)} °C',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.temperature,
-                      TomatoThresholds.temperatureLow,
-                      TomatoThresholds.temperatureHigh,
-                    ),
-                    tooltip: TomatoThresholds.temperatureTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'pH',
                     value: reading.ph.toStringAsFixed(1),
-                    color: TomatoThresholds.getColorForValue(
-                      reading.ph,
-                      TomatoThresholds.phLow,
-                      TomatoThresholds.phHigh,
-                    ),
-                    tooltip: TomatoThresholds.phTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'Nitrogen (N)',
                     value: '${reading.nitrogen} mg/kg',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.nitrogen.toDouble(),
-                      TomatoThresholds.nitrogenLow,
-                      TomatoThresholds.nitrogenHigh,
-                    ),
-                    tooltip: TomatoThresholds.nitrogenTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'Phosphorus (P)',
                     value: '${reading.phosphorus} mg/kg',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.phosphorus.toDouble(),
-                      TomatoThresholds.phosphorusLow,
-                      TomatoThresholds.phosphorusHigh,
-                    ),
-                    tooltip: TomatoThresholds.phosphorusTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'Potassium (K)',
                     value: '${reading.potassium} mg/kg',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.potassium.toDouble(),
-                      TomatoThresholds.potassiumLow,
-                      TomatoThresholds.potassiumHigh,
-                    ),
-                    tooltip: TomatoThresholds.potassiumTooltip,
                     style: chipStyle,
                   ),
                   _MetricChip(
                     label: 'Salinity',
                     value: '${reading.salinity.toStringAsFixed(2)}',
-                    color: TomatoThresholds.getColorForValue(
-                      reading.salinity,
-                      TomatoThresholds.salinityLow,
-                      TomatoThresholds.salinityHigh,
-                    ),
-                    tooltip: TomatoThresholds.salinityTooltip,
                     style: chipStyle,
                   ),
                 ],
@@ -413,37 +336,24 @@ class _MetricChip extends StatelessWidget {
   const _MetricChip({
     required this.label,
     required this.value,
-    required this.color,
-    required this.tooltip,
     required this.style,
   });
 
   final String label;
   final String value;
-  final Color color;
-  final String tooltip;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: Chip(
-        backgroundColor: color.withOpacity(0.15),
-        avatar: CircleAvatar(
-          backgroundColor: color,
-          radius: 6,
-        ),
-        label: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: style?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 2),
-            Text(value, style: style),
-          ],
-        ),
+    return Chip(
+      label: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: style?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(value, style: style),
+        ],
       ),
     );
   }

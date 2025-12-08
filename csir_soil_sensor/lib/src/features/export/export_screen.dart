@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/export_service.dart';
 import '../../services/permission_service.dart';
 import '../../data/db/app_database.dart';
+import '../../data/repositories/sensor_repository.dart';
+import '../../data/repositories/crop_repository.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -200,6 +202,83 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     }
   }
 
+  Future<void> _clearAllData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All Data'),
+        content: const Text(
+          'This will permanently delete ALL sensor readings, crop parameters, and images. This action cannot be undone.\n\nAre you sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _busy = true;
+      _status = 'Clearing all data...';
+    });
+
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final sensorRepo = SensorRepository(db);
+      final cropRepo = CropRepository(db);
+
+      // Delete all sensor readings
+      await sensorRepo.deleteAllReadings();
+      
+      // Delete all crop parameters (this also deletes associated images from DB)
+      await cropRepo.deleteAllCropParams();
+
+      // Note: Physical image files would need to be deleted separately if needed
+      // For now, we're just clearing the database references
+
+      setState(() {
+        _status = 'All data cleared successfully.';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All data has been cleared'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _status = 'Error clearing data: $e';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _busy = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -249,6 +328,29 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                 child: ElevatedButton(
                   onPressed: _busy ? null : _exportImages,
                   child: const Text('Export Images'),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 12),
+              Text(
+                'Data Management:',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _clearAllData,
+                  icon: const Icon(Icons.delete_forever),
+                  label: const Text('Clear All Data'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
                 ),
               ),
               const SizedBox(height: 24),

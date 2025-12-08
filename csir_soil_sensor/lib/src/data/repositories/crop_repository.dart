@@ -36,6 +36,24 @@ class CropRepository {
   Future<List<CropImage>> getAllImages() {
     return _db.select(_db.cropImages).get();
   }
+
+  Future<void> deleteCropParams(int id) async {
+    // First delete associated images
+    await (_db.delete(_db.cropImages)
+          ..where((tbl) => tbl.cropParamsId.equals(id)))
+        .go();
+    // Then delete the crop params
+    await (_db.delete(_db.cropParams)
+          ..where((tbl) => tbl.id.equals(id)))
+        .go();
+  }
+
+  Future<int> deleteAllCropParams() async {
+    // Delete all images first
+    await _db.delete(_db.cropImages).go();
+    // Then delete all crop params
+    return await _db.delete(_db.cropParams).go();
+  }
 }
 
 
