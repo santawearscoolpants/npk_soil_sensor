@@ -34,8 +34,11 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
   File? _selectedImage;
   bool _saving = false;
+  bool _submitted = false;
   int? _editingId;
   String? _editingExistingImagePath;
+  final Set<int> _selectedIds = {};
+  bool _multiSelectMode = false;
 
   @override
   void dispose() {
@@ -58,6 +61,10 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
   }
 
   Future<void> _save() async {
+    setState(() {
+      _submitted = true;
+    });
+
     // Ensure we have permission to write files before proceeding.
     final permissionService = ref.read(permissionServiceProvider);
     final allowed = await permissionService.ensureStoragePermission();
@@ -168,6 +175,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         _selectedImage = null;
         _editingId = null;
         _editingExistingImagePath = null;
+        _submitted = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -187,6 +195,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
       if (mounted) {
         setState(() {
           _saving = false;
+          _submitted = false;
         });
       }
     }
@@ -199,155 +208,174 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         appBar: AppBar(
           title: const Text('Tomato Parameters'),
         ),
-        body: GestureDetector(
-          behavior: HitTestBehavior.deferToChild,
-          onTap: () {
-            final currentFocus = FocusScope.of(context);
-            if (!currentFocus.hasPrimaryFocus && currentFocus.focusedChild != null) {
-              currentFocus.unfocus();
-            }
-          },
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _soilTypeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Soil type',
-                        ),
-                        validator: (v) =>
-                            v == null || v.isEmpty ? 'Required' : null,
+        body: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Form(
+                key: _formKey,
+                autovalidateMode: _submitted
+                    ? AutovalidateMode.always
+                    : AutovalidateMode.disabled,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _soilTypeController,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Soil type',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _soilPropertiesController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Soil properties',
-                          hintText: 'Texture, drainage, organic matter, etc.',
-                        ),
-                        validator: (v) =>
-                            v == null || v.isEmpty ? 'Required' : null,
+                      validator: (v) =>
+                          _submitted && (v == null || v.isEmpty) ? ' ' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _soilPropertiesController,
+                      maxLines: 3,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Soil properties',
+                        hintText: 'Texture, drainage, organic matter, etc.',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _leafColorController,
-                        decoration: const InputDecoration(
-                          labelText: 'Leaf color',
-                          hintText: 'e.g. dark green, pale yellow',
-                        ),
-                        validator: (v) =>
-                            v == null || v.isEmpty ? 'Required' : null,
+                      validator: (v) => _submitted && (v == null || v.isEmpty)
+                          ? ' '
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _leafColorController,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Leaf color',
+                        hintText: 'e.g. dark green, pale yellow',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _stemDescriptionController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Stem size (cm)',
-                          hintText: 'e.g. 1.5',
-                        ),
-                        validator: (v) =>
-                            v == null || v.isEmpty ? 'Required' : null,
+                      validator: (v) =>
+                          _submitted && (v == null || v.isEmpty) ? ' ' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _stemDescriptionController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Stem size (cm)',
+                        hintText: 'e.g. 1.5',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _heightController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Plant height (cm)',
-                        ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
-                          final value = double.tryParse(v);
-                          if (value == null) return 'Enter a valid number';
-                          if (value <= 0) return 'Height must be positive';
-                          return null;
-                        },
+                      validator: (v) =>
+                          _submitted && (v == null || v.isEmpty) ? ' ' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _heightController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Plant height (cm)',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _notesController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Notes (optional)',
-                        ),
+                      validator: (v) {
+                        if (!_submitted) return null;
+                        if (v == null || v.isEmpty) return ' ';
+                        final value = double.tryParse(v);
+                        if (value == null) return ' ';
+                        if (value <= 0) return ' ';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _notesController,
+                      maxLines: 3,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (optional)',
+                        errorStyle:
+                            TextStyle(height: 0, color: Colors.transparent),
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _pickImage(ImageSource.camera),
-                              icon: const Icon(Icons.photo_camera),
-                              label: const Text('Camera'),
-                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _pickImage(ImageSource.camera),
+                            icon: const Icon(Icons.photo_camera),
+                            label: const Text('Camera'),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _pickImage(ImageSource.gallery),
-                              icon: const Icon(Icons.photo_library),
-                              label: const Text('Gallery'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (_selectedImage != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            _selectedImage!,
-                            height: 180,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      else
-                        const Text(
-                          'No image selected yet.',
-                          style: TextStyle(color: Colors.grey),
                         ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _saving ? null : _save,
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Text(
-                                  _editingId == null
-                                      ? 'Save parameters'
-                                      : 'Update parameters',
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _pickImage(ImageSource.gallery),
+                            icon: const Icon(Icons.photo_library),
+                            label: const Text('Gallery'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (_selectedImage != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          _selectedImage!,
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    else
+                      const Text(
+                        'No image selected yet.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _saving ? null : _save,
+                        child: _saving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                 ),
-                        ),
+                              )
+                            : Text(
+                                _editingId == null
+                                    ? 'Save parameters'
+                                    : 'Update parameters',
+                              ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                _CropParamsHistorySection(
-                  onEdit: _startEdit,
-                  onDelete: _confirmDelete,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 24),
+              _CropParamsHistorySection(
+                onEdit: _startEdit,
+                onDelete: _confirmDelete,
+                selectedIds: _selectedIds,
+                onToggleSelected: _toggleSelected,
+                multiSelectMode: _multiSelectMode,
+                onToggleMultiSelect: _toggleMultiSelectMode,
+                onDeleteSelected: _confirmDeleteSelected,
+              ),
+            ],
           ),
         ),
       ),
@@ -432,6 +460,86 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
       );
     }
   }
+
+  void _toggleSelected(CropParam item) {
+    if (!_multiSelectMode) return;
+    setState(() {
+      if (_selectedIds.contains(item.id)) {
+        _selectedIds.remove(item.id);
+      } else {
+        _selectedIds.add(item.id);
+      }
+    });
+  }
+
+  Future<void> _confirmDeleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete selected sets?'),
+        content: Text(
+          'This will delete ${_selectedIds.length} selected sets and their images.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final repo = ref.read(_cropRepoProvider);
+    for (final id in _selectedIds.toList()) {
+      await repo.deleteCropParams(id);
+    }
+    ref.invalidate(_cropHistoryProvider);
+
+    // If the edited item was among deleted, clear form.
+    if (_editingId != null && _selectedIds.contains(_editingId)) {
+      _formKey.currentState?.reset();
+      _soilTypeController.clear();
+      _soilPropertiesController.clear();
+      _leafColorController.clear();
+      _stemDescriptionController.clear();
+      _heightController.clear();
+      _notesController.clear();
+      setState(() {
+        _selectedImage = null;
+        _editingId = null;
+        _editingExistingImagePath = null;
+        _submitted = false;
+      });
+    }
+
+    setState(() {
+      _selectedIds.clear();
+      _multiSelectMode = false;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selected sets deleted')),
+      );
+    }
+  }
+
+  void _toggleMultiSelectMode() {
+    setState(() {
+      _multiSelectMode = !_multiSelectMode;
+      if (!_multiSelectMode) {
+        _selectedIds.clear();
+      }
+    });
+  }
 }
 
 final _cropHistoryProvider =
@@ -445,10 +553,20 @@ class _CropParamsHistorySection extends ConsumerWidget {
   const _CropParamsHistorySection({
     required this.onEdit,
     required this.onDelete,
+    required this.selectedIds,
+    required this.onToggleSelected,
+    required this.multiSelectMode,
+    required this.onToggleMultiSelect,
+    required this.onDeleteSelected,
   });
 
   final void Function(CropParam) onEdit;
   final void Function(CropParam) onDelete;
+  final Set<int> selectedIds;
+  final void Function(CropParam) onToggleSelected;
+  final bool multiSelectMode;
+  final VoidCallback onToggleMultiSelect;
+  final VoidCallback onDeleteSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -457,12 +575,31 @@ class _CropParamsHistorySection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Saved parameter sets',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Saved parameter sets',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (multiSelectMode)
+              IconButton(
+                icon: const Icon(Icons.delete_forever),
+                tooltip: 'Delete selected',
+                onPressed: selectedIds.isEmpty ? null : onDeleteSelected,
+              ),
+            IconButton(
+              icon: Icon(
+                multiSelectMode ? Icons.close : Icons.checklist,
+              ),
+              tooltip: multiSelectMode ? 'Cancel selection' : 'Select multiple',
+              onPressed: onToggleMultiSelect,
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         asyncHistory.when(
@@ -477,6 +614,12 @@ class _CropParamsHistorySection extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final item = items[index];
                 return ListTile(
+                  leading: multiSelectMode
+                      ? Checkbox(
+                          value: selectedIds.contains(item.id),
+                          onChanged: (_) => onToggleSelected(item),
+                        )
+                      : null,
                   title: Text(
                     'Tomato set #${item.id}',
                     style: const TextStyle(fontWeight: FontWeight.bold),
