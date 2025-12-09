@@ -285,7 +285,11 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
       setState(() {
         _status = 'All data cleared successfully.';
+        _selectedSessionId = null;
       });
+
+      // Reload sessions so the dropdown immediately reflects the cleared state.
+      await _loadSessions();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
