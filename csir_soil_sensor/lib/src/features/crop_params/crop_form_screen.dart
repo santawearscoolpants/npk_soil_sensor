@@ -34,6 +34,8 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
   File? _selectedImage;
   bool _saving = false;
+  int? _editingId;
+  String? _editingExistingImagePath;
 
   @override
   void dispose() {
@@ -73,7 +75,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
     }
 
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedImage == null) {
+    if (_selectedImage == null && _editingExistingImagePath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select an image of the crop')),
       );
@@ -99,6 +101,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
             _notesController.text.isEmpty ? null : _notesController.text,
           ),
         ),
+        existingId: _editingId,
       );
 
       final appDir = await getApplicationDocumentsDirectory();
@@ -107,40 +110,50 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         await imagesDir.create(recursive: true);
       }
 
-      // Get all existing images to determine next sequential number
-      final allImages = await repo.getAllImages();
-      int maxImageNumber = 0;
-      for (final img in allImages) {
-        // Extract number from filename like "tomato_001.jpg"
-        final match = RegExp(r'tomato_(\d+)').firstMatch(img.relabelledFileName);
-        if (match != null) {
-          final num = int.tryParse(match.group(1) ?? '0') ?? 0;
-          if (num > maxImageNumber) {
-            maxImageNumber = num;
+      // Only create a new image entry if the user selected a new image or
+      // there was no existing image.
+      final shouldAddImage = _selectedImage != null &&
+          _selectedImage!.path != _editingExistingImagePath;
+      if (shouldAddImage) {
+        // Get all existing images to determine next sequential number
+        final allImages = await repo.getAllImages();
+        int maxImageNumber = 0;
+        for (final img in allImages) {
+          // Extract number from filename like "tomato_001.jpg"
+          final match =
+              RegExp(r'tomato_(\d+)').firstMatch(img.relabelledFileName);
+          if (match != null) {
+            final num = int.tryParse(match.group(1) ?? '0') ?? 0;
+            if (num > maxImageNumber) {
+              maxImageNumber = num;
+            }
           }
         }
+
+        // Generate next sequential number (001, 002, etc.)
+        final nextNumber = maxImageNumber + 1;
+        final imageExtension = p.extension(_selectedImage!.path);
+        final fileName =
+            'tomato_${nextNumber.toString().padLeft(3, '0')}$imageExtension';
+        final destPath = p.join(imagesDir.path, fileName);
+        final savedFile = await _selectedImage!.copy(destPath);
+
+        await repo.insertCropImage(
+          CropImagesCompanion.insert(
+            cropParamsId: cropId,
+            filePath: savedFile.path,
+            relabelledFileName: fileName,
+            createdAt: now,
+          ),
+        );
       }
-
-      // Generate next sequential number (001, 002, etc.)
-      final nextNumber = maxImageNumber + 1;
-      final imageExtension = p.extension(_selectedImage!.path);
-      final fileName = 'tomato_${nextNumber.toString().padLeft(3, '0')}$imageExtension';
-      final destPath = p.join(imagesDir.path, fileName);
-      final savedFile = await _selectedImage!.copy(destPath);
-
-      await repo.insertCropImage(
-        CropImagesCompanion.insert(
-          cropParamsId: cropId,
-          filePath: savedFile.path,
-          relabelledFileName: fileName,
-          createdAt: now,
-        ),
-      );
 
       if (!mounted) return;
 
       // Refresh the history list so the new set appears immediately.
       ref.invalidate(_cropHistoryProvider);
+
+      final wasEditing = _editingId != null;
 
       // Clear the form fields and image.
       _formKey.currentState!.reset();
@@ -153,10 +166,18 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
       setState(() {
         _selectedImage = null;
+        _editingId = null;
+        _editingExistingImagePath = null;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tomato parameters saved')),
+        SnackBar(
+          content: Text(
+            wasEditing
+                ? 'Tomato parameters updated'
+                : 'Tomato parameters saved',
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -178,140 +199,232 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         appBar: AppBar(
           title: const Text('Tomato Parameters'),
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _soilTypeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Soil type',
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _soilTypeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Soil type',
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
                       ),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _soilPropertiesController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Soil properties',
-                        hintText: 'Texture, drainage, organic matter, etc.',
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _soilPropertiesController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Soil properties',
+                          hintText: 'Texture, drainage, organic matter, etc.',
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
                       ),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _leafColorController,
-                      decoration: const InputDecoration(
-                        labelText: 'Leaf color',
-                        hintText: 'e.g. dark green, pale yellow',
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _leafColorController,
+                        decoration: const InputDecoration(
+                          labelText: 'Leaf color',
+                          hintText: 'e.g. dark green, pale yellow',
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
                       ),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _stemDescriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Stem description',
-                        hintText: 'Thickness, strength, lesions, etc.',
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _stemDescriptionController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Stem size (cm)',
+                          hintText: 'e.g. 1.5',
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
                       ),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _heightController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Plant height (cm)',
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _heightController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Plant height (cm)',
+                        ),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          final value = double.tryParse(v);
+                          if (value == null) return 'Enter a valid number';
+                          if (value <= 0) return 'Height must be positive';
+                          return null;
+                        },
                       ),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Required';
-                        final value = double.tryParse(v);
-                        if (value == null) return 'Enter a valid number';
-                        if (value <= 0) return 'Height must be positive';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _notesController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Notes (optional)',
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _notesController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes (optional)',
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _pickImage(ImageSource.camera),
-                            icon: const Icon(Icons.photo_camera),
-                            label: const Text('Camera'),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _pickImage(ImageSource.camera),
+                              icon: const Icon(Icons.photo_camera),
+                              label: const Text('Camera'),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _pickImage(ImageSource.gallery),
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text('Gallery'),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _pickImage(ImageSource.gallery),
+                              icon: const Icon(Icons.photo_library),
+                              label: const Text('Gallery'),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (_selectedImage != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          _selectedImage!,
-                          height: 180,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    else
-                      const Text(
-                        'No image selected yet.',
-                        style: TextStyle(color: Colors.grey),
+                        ],
                       ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _saving ? null : _save,
-                        child: _saving
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                      const SizedBox(height: 12),
+                      if (_selectedImage != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            _selectedImage!,
+                            height: 180,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      else
+                        const Text(
+                          'No image selected yet.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _saving ? null : _save,
+                          child: _saving
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  _editingId == null
+                                      ? 'Save parameters'
+                                      : 'Update parameters',
                                 ),
-                              )
-                            : const Text('Save parameters'),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              const _CropParamsHistorySection(),
-            ],
+                const SizedBox(height: 24),
+                _CropParamsHistorySection(
+                  onEdit: _startEdit,
+                  onDelete: _confirmDelete,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _startEdit(CropParam item) async {
+    _soilTypeController.text = item.soilType;
+    _soilPropertiesController.text = item.soilProperties;
+    _leafColorController.text = item.leafColor;
+    _stemDescriptionController.text = item.stemDescription;
+    _heightController.text = item.heightCm.toString();
+    _notesController.text = item.notes ?? '';
+    _editingId = item.id;
+    _editingExistingImagePath = null;
+
+    // Load first associated image (if any) so editing doesn't require re-pick.
+    final repo = ref.read(_cropRepoProvider);
+    final images = await repo.getImagesForCrop(item.id);
+    if (images.isNotEmpty) {
+      final file = File(images.first.filePath);
+      if (await file.exists()) {
+        setState(() {
+          _selectedImage = file;
+          _editingExistingImagePath = file.path;
+        });
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Loaded set #${item.id} for editing')),
+    );
+  }
+
+  Future<void> _confirmDelete(CropParam item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete parameters?'),
+        content: Text(
+          'This will delete tomato set #${item.id} and its images.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final repo = ref.read(_cropRepoProvider);
+    await repo.deleteCropParams(item.id);
+    ref.invalidate(_cropHistoryProvider);
+
+    // If we were editing this item, clear the form.
+    if (_editingId == item.id) {
+      _formKey.currentState?.reset();
+      _soilTypeController.clear();
+      _soilPropertiesController.clear();
+      _leafColorController.clear();
+      _stemDescriptionController.clear();
+      _heightController.clear();
+      _notesController.clear();
+      setState(() {
+        _selectedImage = null;
+        _editingId = null;
+        _editingExistingImagePath = null;
+      });
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted set #${item.id}')),
+      );
+    }
   }
 }
 
@@ -323,7 +436,13 @@ final _cropHistoryProvider =
 });
 
 class _CropParamsHistorySection extends ConsumerWidget {
-  const _CropParamsHistorySection();
+  const _CropParamsHistorySection({
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final void Function(CropParam) onEdit;
+  final void Function(CropParam) onDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -358,6 +477,21 @@ class _CropParamsHistorySection extends ConsumerWidget {
                   ),
                   subtitle: Text(
                     '${item.createdAt.toLocal()} • Soil: ${item.soilType}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => onEdit(item),
+                        tooltip: 'Edit',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () => onDelete(item),
+                        tooltip: 'Delete',
+                      ),
+                    ],
                   ),
                 );
               },
