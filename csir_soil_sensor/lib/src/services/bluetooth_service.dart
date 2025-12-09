@@ -302,14 +302,34 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       final jsonMap = jsonDecode(payload) as Map<String, dynamic>;
       print('Parsed JSON: $jsonMap');
       
-      final reading = LiveReading.fromJson(jsonMap);
+      final rawReading = LiveReading.fromJson(jsonMap);
+
+      // Normalize timestamp: if it looks too small (e.g., millis since boot),
+      // replace with current Unix time so UI and exports show a real date.
+      final normalizedSeconds = rawReading.timestamp > 946684800
+          ? rawReading.timestamp
+          : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+      final reading = LiveReading(
+        timestamp: normalizedSeconds,
+        moisture: rawReading.moisture,
+        ec: rawReading.ec,
+        temperature: rawReading.temperature,
+        ph: rawReading.ph,
+        nitrogen: rawReading.nitrogen,
+        phosphorus: rawReading.phosphorus,
+        potassium: rawReading.potassium,
+        salinity: rawReading.salinity,
+      );
+
       print('Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}');
 
       // Persist immediately and track pending batch ids
+      final ts = DateTime.fromMillisecondsSinceEpoch(reading.timestamp * 1000);
+
       final id = await _sensorRepository.insertReading(
         SensorReadingsCompanion.insert(
-          timestamp:
-              DateTime.fromMillisecondsSinceEpoch(reading.timestamp * 1000),
+          timestamp: ts,
           moisture: reading.moisture,
           ec: reading.ec,
           temperature: reading.temperature,
