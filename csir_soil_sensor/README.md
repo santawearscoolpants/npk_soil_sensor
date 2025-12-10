@@ -232,10 +232,4 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
 - Verify service and characteristic UUIDs match exactly
 - Ensure ESP32 is sending notifications (not just read values)
 
-## License
 
-[Add your license information here]
-
-## Contributing
-
-[Add contribution guidelines if applicable]
