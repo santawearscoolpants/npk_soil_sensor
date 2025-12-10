@@ -21,17 +21,19 @@ class BluetoothConnectionScreen extends ConsumerWidget {
             'You have $pendingCount unsaved readings. What would you like to do?',
           ),
           actions: [
-            TextButton(
+             
+            ElevatedButton(
               onPressed: () => Navigator.of(context).pop('cancel'),
-              child: const Text('Cancel'),
+              child: const Text('Go Back'),
             ),
-            TextButton(
+            SizedBox(height: 10,),
+            
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () => Navigator.of(context).pop('discard'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('Discard'),
+              child: const Text('Discard Unsaved Readings', style: TextStyle(color: Colors.white),),
             ),
+            SizedBox(height: 10,),
+
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop('save'),
               child: const Text('Save'),

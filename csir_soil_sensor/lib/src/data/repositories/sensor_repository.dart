@@ -36,6 +36,20 @@ class SensorRepository {
   Future<int> deleteAllReadings() async {
     return await _db.delete(_db.sensorReadings).go();
   }
+
+  Future<void> updateReadingsCropParamsId(
+    List<int> readingIds,
+    int? cropParamsId,
+  ) async {
+    if (readingIds.isEmpty) return;
+    await (_db.update(_db.sensorReadings)
+          ..where((tbl) => tbl.id.isIn(readingIds)))
+        .write(SensorReadingsCompanion(
+          cropParamsId: cropParamsId != null
+              ? Value(cropParamsId)
+              : const Value.absent(),
+        ));
+  }
 }
 
 
