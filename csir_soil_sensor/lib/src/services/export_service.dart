@@ -56,19 +56,23 @@ class LocalExportService implements ExportService {
         'salinity',
         'cropParamsId',
       ],
-      ...readings.map((r) => [
-            r.id,
-            r.timestamp.toIso8601String(),
-            r.moisture,
-            r.ec,
-            r.temperature,
-            r.ph,
-            r.nitrogen,
-            r.phosphorus,
-            r.potassium,
-            r.salinity,
-            r.cropParamsId ?? '', // Handle null as empty string
-          ]),
+      ...readings.asMap().entries.map((entry) {
+        final index = entry.key;
+        final r = entry.value;
+        return [
+          index + 1, // Start IDs from 1 for each export
+          r.timestamp.toIso8601String(),
+          r.moisture,
+          r.ec,
+          r.temperature,
+          r.ph,
+          r.nitrogen,
+          r.phosphorus,
+          r.potassium,
+          r.salinity,
+          r.cropParamsId ?? '', // Handle null as empty string
+        ];
+      }),
     ];
 
     final csvData = const ListToCsvConverter().convert(rows);
@@ -119,13 +123,15 @@ class LocalExportService implements ExportService {
         'notes',
         'imageFilenames',
       ],
-      ...readings.map((r) {
+      ...readings.asMap().entries.map((entry) {
+        final index = entry.key;
+        final r = entry.value;
         final cp = r.cropParamsId != null ? cropParamsById[r.cropParamsId] : null;
         final imageFilenames = r.cropParamsId != null
             ? (imagesByCropId[r.cropParamsId] ?? []).join('; ')
             : '';
         return [
-          r.id,
+          index + 1, // Start IDs from 1 for each export
           r.timestamp.toIso8601String(),
           r.moisture,
           r.ec,
