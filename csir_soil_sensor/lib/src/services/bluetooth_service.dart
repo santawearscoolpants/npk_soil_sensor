@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -101,8 +102,11 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   BluetoothDevice? _connectedDevice;
   // ignore: unused_field
   BluetoothCharacteristic? _sensorCharacteristic;
+  StreamSubscription<List<int>>? _characteristicSubscription;
   final List<int> _pendingReadingIds = [];
   int? _activeCropParamsId;
+  StreamSubscription<List<ScanResult>>? _scanSubscription;
+  bool _shouldIgnoreScanResults = false;
 
   void setActiveCropParamsId(int? id) {
     _activeCropParamsId = id;
@@ -136,8 +140,20 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     return _normalizeUuid(uuid1) == _normalizeUuid(uuid2);
   }
 
+  Future<void> _cancelScan() async {
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+  }
+
   Future<void> scanForDevices() async {
     try {
+      // If already connected, keep status but allow a fresh scan if user wants.
+      // Cancel any previous scan subscriptions to avoid stale results.
+      await _cancelScan();
+
       final adapterState = await FlutterBluePlus.adapterState.first;
       if (adapterState != BluetoothAdapterState.on) {
         state = state.copyWith(
@@ -153,9 +169,10 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       );
 
       final Map<String, DiscoveredDevice> devices = {};
-      final subscription = FlutterBluePlus.scanResults.listen((results) {
+      _shouldIgnoreScanResults = false; // Reset flag for new scan
+      _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         // If we've already selected a device (even if not fully connected yet), ignore further scan results.
-        if (state.connectedDeviceName != null) return;
+        if (_shouldIgnoreScanResults || state.connectedDeviceName != null) return;
         for (final result in results) {
           final dev = result.device;
           final name =
@@ -173,18 +190,18 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
       // Wait for the scan to finish (timeout handled by startScan).
       await Future.delayed(const Duration(seconds: 10));
-      await FlutterBluePlus.stopScan();
-      await subscription.cancel();
+      await _cancelScan();
 
+      // Only update state if we're still not connected (user might have connected during scan)
       final connected = state.isConnected;
-      state = state.copyWith(
-        connectionStatus: connected
-            ? state.connectionStatus
-            : devices.isEmpty
-                ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
-                : 'Tap a device to connect',
-        devices: devices.values.toList(),
-      );
+      if (!connected) {
+        state = state.copyWith(
+          connectionStatus: devices.isEmpty
+              ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
+              : 'Tap a device to connect',
+          devices: devices.values.toList(),
+        );
+      }
     } catch (e) {
       state = state.copyWith(connectionStatus: 'Error: $e');
     }
@@ -192,9 +209,8 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
 
   Future<void> connectToDevice(DiscoveredDevice device) async {
     // Stop any ongoing scan when user chooses a device.
-    try {
-      await FlutterBluePlus.stopScan();
-    } catch (_) {}
+    _shouldIgnoreScanResults = true; // Stop processing scan results
+    await _cancelScan();
 
     _connectedDevice = device.device;
     // Clear device list immediately when user selects a device
@@ -252,8 +268,11 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
                 await characteristic.setNotifyValue(true);
                 print('Notifications enabled');
                 
+                // Cancel any existing subscription before creating a new one
+                await _characteristicSubscription?.cancel();
+                
                 // Subscribe to value updates
-                characteristic.onValueReceived.listen(
+                _characteristicSubscription = characteristic.onValueReceived.listen(
                   (data) {
                     _onCharacteristicData(data);
                   },
@@ -380,21 +399,45 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     return session;
   }
 
+  void discardPendingReadings() {
+    _pendingReadingIds.clear();
+    state = state.copyWith(pendingCount: 0);
+  }
+
   Future<void> disconnect() async {
+    _shouldIgnoreScanResults = false; // Allow scan results again after disconnect
+    await _cancelScan();
+    
+    // Cancel characteristic subscription and disable notifications
+    await _characteristicSubscription?.cancel();
+    _characteristicSubscription = null;
+    
     try {
+      // Disable notifications before disconnecting
+      if (_sensorCharacteristic != null) {
+        try {
+          await _sensorCharacteristic!.setNotifyValue(false);
+        } catch (_) {
+          // ignore if already disconnected
+        }
+      }
       await _connectedDevice?.disconnect();
     } catch (_) {
       // ignore disconnect errors
     }
+    
     _connectedDevice = null;
     _sensorCharacteristic = null;
     _pendingReadingIds.clear();
-    state = state.copyWith(
+    
+    // Fully reset state to ensure clean disconnection - clear everything except latestReading
+    // Use a fresh state to avoid any potential stale data
+    state = BluetoothStateModel(
       connectionStatus: 'Disconnected',
       connectedDeviceName: null,
-      latestReading: null,
       devices: const [],
       pendingCount: 0,
+      latestReading: state.latestReading, // Preserve latest reading (UI will hide it when disconnected)
     );
   }
 }
