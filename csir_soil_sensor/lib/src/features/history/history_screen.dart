@@ -152,6 +152,23 @@ Future<void> _showSessionDetails(
 
   if (!context.mounted) return;
 
+  // Get current linked crop params ID (if all readings have the same one)
+  int? currentCropParamsId;
+  if (readings.isNotEmpty) {
+    final uniqueIds = readings
+        .where((r) => r.cropParamsId != null)
+        .map((r) => r.cropParamsId!)
+        .toSet();
+    if (uniqueIds.length == 1) {
+      currentCropParamsId = uniqueIds.first;
+    }
+  }
+
+  // Load all crop parameters for the dropdown
+  final allCropParams = await cropRepo.getAllCropParams();
+
+  if (!context.mounted) return;
+
   await showDialog(
     context: context,
     builder: (context) => _SessionDetailsDialog(
@@ -160,9 +177,10 @@ Future<void> _showSessionDetails(
       linkedCropParams: linkedCropParams,
       startTime: startTime,
       endTime: endTime,
-      onLinkCropParams: () async {
-        Navigator.of(context).pop(); // Close details dialog
-        await _showLinkCropParamsDialog(context, ref, session);
+      allCropParams: allCropParams,
+      currentCropParamsId: currentCropParamsId,
+      onLinkCropParams: (selectedId) async {
+        await _updateSessionCropParams(context, ref, session, selectedId);
       },
       onDelete: () async {
         Navigator.of(context).pop(); // Close details dialog
@@ -172,14 +190,16 @@ Future<void> _showSessionDetails(
   );
 }
 
-class _SessionDetailsDialog extends StatelessWidget {
+class _SessionDetailsDialog extends StatefulWidget {
   const _SessionDetailsDialog({
     required this.session,
     required this.readings,
     this.linkedCropParams,
     required this.startTime,
     required this.endTime,
-    this.onLinkCropParams,
+    required this.allCropParams,
+    this.currentCropParamsId,
+    required this.onLinkCropParams,
     this.onDelete,
   });
 
@@ -188,27 +208,54 @@ class _SessionDetailsDialog extends StatelessWidget {
   final List<CropParam>? linkedCropParams;
   final DateTime startTime;
   final DateTime endTime;
-  final VoidCallback? onLinkCropParams;
+  final List<CropParam> allCropParams;
+  final int? currentCropParamsId;
+  final ValueChanged<int?> onLinkCropParams;
   final VoidCallback? onDelete;
+
+  @override
+  State<_SessionDetailsDialog> createState() => _SessionDetailsDialogState();
+}
+
+class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
+  int? _selectedCropParamsId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCropParamsId = widget.currentCropParamsId;
+  }
 
   @override
   Widget build(BuildContext context) {
     // Calculate averages
-    final avgMoisture = readings
+    final avgMoisture = widget.readings
             .map((r) => r.moisture)
             .reduce((a, b) => a + b) /
-        readings.length;
-    final avgEC = readings.map((r) => r.ec).reduce((a, b) => a + b) /
-        readings.length;
-    final avgTemp = readings
+        widget.readings.length;
+    final avgEC = widget.readings.map((r) => r.ec).reduce((a, b) => a + b) /
+        widget.readings.length;
+    final avgTemp = widget.readings
             .map((r) => r.temperature)
             .reduce((a, b) => a + b) /
-        readings.length;
-    final avgPH = readings.map((r) => r.ph).reduce((a, b) => a + b) /
-        readings.length;
+        widget.readings.length;
+    final avgPH = widget.readings.map((r) => r.ph).reduce((a, b) => a + b) /
+        widget.readings.length;
 
     return AlertDialog(
-      title: Text('Session #${session.id}'),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('Session #${widget.session.id}'),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Close',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -216,18 +263,18 @@ class _SessionDetailsDialog extends StatelessWidget {
           children: [
             _DetailRow(
               label: 'Readings',
-              value: '${readings.length}',
+              value: '${widget.readings.length}',
             ),
             const SizedBox(height: 8),
             _DetailRow(
               label: 'Date',
-              value: session.createdAt.toLocal().toString().split('.')[0],
+              value: widget.session.createdAt.toLocal().toString().split('.')[0],
             ),
             const SizedBox(height: 8),
             _DetailRow(
               label: 'Time Range',
               value:
-                  '${startTime.toLocal().toString().split('.')[0]} - ${endTime.toLocal().toString().split('.')[0]}',
+                  '${widget.startTime.toLocal().toString().split('.')[0]} - ${widget.endTime.toLocal().toString().split('.')[0]}',
             ),
             const SizedBox(height: 16),
             const Divider(),
@@ -261,47 +308,66 @@ class _SessionDetailsDialog extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            if (linkedCropParams == null || linkedCropParams!.isEmpty)
-              const Text(
-                'No crop parameters linked',
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey,
-                ),
-              )
-            else
-              ...linkedCropParams!.map(
-                (cp) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    'Set #${cp.id}: ${cp.soilType}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+            DropdownButtonFormField<int?>(
+              value: _selectedCropParamsId,
+              decoration: const InputDecoration(
+                labelText: 'Link to crop parameter set',
+                hintText: 'None (unlinked)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
                 ),
               ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('None (unlink)'),
+                ),
+                ...widget.allCropParams.map(
+                  (cp) => DropdownMenuItem<int?>(
+                    value: cp.id,
+                    child: Text(
+                      'Set #${cp.id}: ${cp.soilType} (${cp.createdAt.toLocal().toString().split(' ')[0]})',
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedCropParamsId = value;
+                });
+                // Update immediately when selection changes
+                widget.onLinkCropParams(value);
+              },
+            ),
+            if (widget.linkedCropParams != null && widget.linkedCropParams!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Currently linked: ${widget.linkedCropParams!.map((cp) => 'Set #${cp.id}: ${cp.soilType}').join(', ')}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
       actions: [
-        if (onDelete != null)
+        if (widget.onDelete != null)
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              onDelete?.call();
+              widget.onDelete?.call();
             },
             style: TextButton.styleFrom(
               foregroundColor: Colors.red,
             ),
             child: const Text('Delete Session'),
           ),
-        TextButton(
-          onPressed: onLinkCropParams,
-          child: const Text('Link Crop Params'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
       ],
     );
   }
@@ -339,22 +405,16 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-Future<void> _showLinkCropParamsDialog(
+Future<void> _updateSessionCropParams(
   BuildContext context,
   WidgetRef ref,
   ReadingSession session,
+  int? selectedCropParamsId,
 ) async {
-  final cropRepo = ref.read(_cropRepoProvider);
   final sensorRepo = ref.read(_sensorRepoProvider);
 
-  // Load all crop parameters
-  final cropParams = await cropRepo.getAllCropParams();
-
-  if (!context.mounted) return;
-
   // Get current linked crop params ID (if all readings have the same one)
-  final sensorRepoForCurrent = ref.read(_sensorRepoProvider);
-  final currentReadings = await sensorRepoForCurrent.getReadingsByIds(session.readingIds);
+  final currentReadings = await sensorRepo.getReadingsByIds(session.readingIds);
   int? currentCropParamsId;
   if (currentReadings.isNotEmpty) {
     final uniqueIds = currentReadings
@@ -366,66 +426,9 @@ Future<void> _showLinkCropParamsDialog(
     }
   }
 
-  final selectedCropParamsId = await showDialog<int?>(
-    context: context,
-    builder: (context) {
-      int? selectedValue = currentCropParamsId;
-      return StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Link to Crop Parameters'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: cropParams.isEmpty
-                ? const Text('No crop parameters available. Create one first.')
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: cropParams.length + 1, // +1 for "None" option
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return RadioListTile<int?>(
-                          title: const Text('None (unlink)'),
-                          value: null,
-                          groupValue: selectedValue,
-                          onChanged: (value) {
-                            setState(() {
-                              selectedValue = value;
-                            });
-                            Navigator.of(context).pop(value);
-                          },
-                        );
-                      }
-                      final cp = cropParams[index - 1];
-                      return RadioListTile<int?>(
-                        title: Text('Set #${cp.id}: ${cp.soilType}'),
-                        subtitle: Text(
-                          cp.createdAt.toLocal().toString().split(' ')[0],
-                        ),
-                        value: cp.id,
-                        groupValue: selectedValue,
-                        onChanged: (value) {
-                          setState(() {
-                            selectedValue = value;
-                          });
-                          Navigator.of(context).pop(value);
-                        },
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-
   // Check if value actually changed
   if (selectedCropParamsId == currentCropParamsId) {
-    return; // No change, user likely cancelled
+    return; // No change
   }
 
   // Update all readings in the session
@@ -446,7 +449,7 @@ Future<void> _showLinkCropParamsDialog(
           backgroundColor: Colors.green,
         ),
       );
-      // Refresh the session details if dialog is still open
+      // Refresh the sessions list
       ref.invalidate(_sessionsProvider);
     }
   } catch (e) {

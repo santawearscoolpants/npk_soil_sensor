@@ -9,7 +9,8 @@ import '../../services/session_store.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   final db = ref.watch(appDatabaseProvider);
-  return LocalExportService(db);
+  final sessionStore = ref.read(sessionStoreProvider);
+  return LocalExportService(db, sessionStore);
 });
 
 class ExportScreen extends ConsumerStatefulWidget {
@@ -147,7 +148,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         return;
       }
       final service = ref.read(exportServiceProvider);
-      final message = await service.exportPdfReport();
+      final message = await service.exportPdfReport(sessionId: _selectedSessionId);
       setState(() {
         _status = message;
       });
