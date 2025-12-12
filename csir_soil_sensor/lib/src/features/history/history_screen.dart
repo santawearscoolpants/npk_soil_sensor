@@ -183,7 +183,7 @@ Future<void> _showSessionDetails(
         await _updateSessionCropParams(context, ref, session, selectedId);
       },
       onDelete: () async {
-        Navigator.of(context).pop(); // Close details dialog
+        // Show confirmation dialog first, then close details dialog after confirmation
         await _deleteSession(context, ref, session);
       },
     ),
@@ -360,7 +360,6 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
         if (widget.onDelete != null)
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
               widget.onDelete?.call();
             },
             style: TextButton.styleFrom(
@@ -469,20 +468,24 @@ Future<void> _deleteSession(
   WidgetRef ref,
   ReadingSession session,
 ) async {
+  // Use rootNavigator to show confirmation dialog above all dialogs
+  // This prevents overlay issues when dialogs are nested
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
+    barrierDismissible: true,
+    useRootNavigator: true,
+    builder: (dialogContext) => AlertDialog(
       title: const Text('Delete Session'),
       content: Text(
         'Are you sure you want to delete Session #${session.id} with ${session.readingIds.length} readings? This action cannot be undone.',
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(dialogContext, rootNavigator: true).pop(false),
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () => Navigator.of(dialogContext, rootNavigator: true).pop(true),
           style: TextButton.styleFrom(
             foregroundColor: Colors.red,
           ),
@@ -492,7 +495,15 @@ Future<void> _deleteSession(
     ),
   );
 
-  if (confirmed != true || !context.mounted) return;
+  // Only proceed if confirmed
+  if (confirmed != true) return;
+  
+  // Close the session details dialog before deleting
+  if (context.mounted) {
+    Navigator.of(context).pop();
+  }
+  
+  if (!context.mounted) return;
 
   try {
     final sessionStore = ref.read(sessionStoreProvider);
