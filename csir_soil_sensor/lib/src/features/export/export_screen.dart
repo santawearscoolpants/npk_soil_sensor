@@ -6,6 +6,7 @@ import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../services/session_store.dart';
+import '../charts/charts_screen.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -235,6 +236,31 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     }
   }
 
+  Future<void> _exportCharts() async {
+    setState(() {
+      _busy = true;
+      _status = 'Opening charts for export...';
+    });
+    
+    // Navigate to charts screen for chart export
+    // The charts screen has a floating action button for export
+    if (!mounted) return;
+    
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ChartsScreen(),
+      ),
+    ).then((_) {
+      // Refresh status after returning from charts screen
+      if (mounted) {
+        setState(() {
+          _status = 'Returned from charts screen.';
+          _busy = false;
+        });
+      }
+    });
+  }
+
   Future<void> _clearAllData() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -399,6 +425,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                 child: ElevatedButton(
                   onPressed: _busy ? null : _exportPdfReport,
                   child: const Text('Export PDF Report'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _busy ? null : _exportCharts,
+                  icon: const Icon(Icons.show_chart),
+                  label: const Text('Export Charts (PDF)'),
                 ),
               ),
               const SizedBox(height: 12),

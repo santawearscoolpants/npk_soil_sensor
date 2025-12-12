@@ -578,14 +578,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: 'Export current chart',
-            onPressed: () {
-              _exportChart(_tabController.index, _selectedSessionId);
-            },
-          ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          _exportChart(_tabController.index, _selectedSessionId);
+        },
+        icon: const Icon(Icons.share),
+        label: const Text('Export Chart'),
       ),
       body: Column(
         children: [
