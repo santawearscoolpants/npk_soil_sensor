@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -8,10 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
+import '../../services/bluetooth_service.dart';
 
 final _sessionsProvider =
     FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
@@ -45,6 +49,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   int? _selectedSessionId;
   late TabController _tabController;
   final Map<int, GlobalKey> _chartKeys = {};
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -56,8 +61,22 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     }
   }
 
+  void _setupAutoRefresh(bool isConnected) {
+    _refreshTimer?.cancel();
+    if (isConnected) {
+      // Auto-refresh every 3 seconds when connected
+      _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (mounted) {
+          ref.invalidate(_readingsProvider);
+          ref.invalidate(_sessionsProvider);
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -75,25 +94,89 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     return session.id == -1 ? null : session.readingIds;
   }
 
-  Future<void> _exportChart(int chartIndex, String chartName) async {
+  String _getExportFileName(int chartIndex, int? sessionId) {
+    final chartNames = [
+      'all_readings',
+      'moisture',
+      'ec',
+      'temperature',
+      'pH',
+      'nitrogen',
+      'phosphorus',
+      'potassium',
+      'salinity',
+    ];
+    
+    final baseName = chartNames[chartIndex];
+    
+    if (sessionId != null) {
+      return '${baseName}_session${sessionId}_chart';
+    } else {
+      if (chartIndex == 0) {
+        return 'all_readings_chart';
+      } else {
+        return '${baseName}_all_readings_chart';
+      }
+    }
+  }
+
+  String _getChartTitle(int chartIndex) {
+    final chartNames = [
+      'All Sensors Overview',
+      'Moisture',
+      'EC',
+      'Temperature',
+      'pH',
+      'Nitrogen',
+      'Phosphorus',
+      'Potassium',
+      'Salinity',
+    ];
+    return chartNames[chartIndex];
+  }
+
+  Future<ui.Image?> _captureChartImage(int chartIndex) async {
     final key = _chartKeys[chartIndex];
-    if (key == null || key.currentContext == null) return;
+    if (key == null || key.currentContext == null) return null;
 
     try {
       // Get the RenderRepaintBoundary from the GlobalKey
       final renderObject = key.currentContext!.findRenderObject();
       if (renderObject == null || renderObject is! RenderRepaintBoundary) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Chart not ready for export')),
-          );
-        }
-        return;
+        return null;
       }
       final RenderRepaintBoundary boundary = renderObject;
       
-      // Capture the image
-      final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      // Wait a bit to ensure the chart is fully rendered
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Capture the image with high pixel ratio for quality
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      return image;
+    } catch (e) {
+      print('Error capturing chart $chartIndex: $e');
+      return null;
+    }
+  }
+
+  Future<void> _exportChart(int chartIndex, int? sessionId) async {
+    // Special handling for "All Sensors" tab - export all individual charts
+    if (chartIndex == 0) {
+      await _exportAllSensorsChart(sessionId);
+      return;
+    }
+
+    final image = await _captureChartImage(chartIndex);
+    if (image == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chart not ready for export')),
+        );
+      }
+      return;
+    }
+
+    try {
       final ByteData? byteData =
           await image.toByteData(format: ui.ImageByteFormat.png);
       
@@ -106,18 +189,274 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         return;
       }
 
-      final dir = await getTemporaryDirectory();
-      final fileName =
-          '${chartName}_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(byteData.buffer.asUint8List());
+      // Convert image bytes to PDF image
+      final imageBytes = byteData.buffer.asUint8List();
+      
+      // Verify image bytes are valid
+      if (imageBytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image data is empty')),
+          );
+        }
+        return;
+      }
+      
+      // Create PDF image
+      final pdfImage = pw.MemoryImage(imageBytes);
 
-      await Share.shareXFiles([XFile(file.path)],
-          text: 'Chart: $chartName');
+      // Get image dimensions for proper sizing
+      final imageWidth = image.width.toDouble();
+      final imageHeight = image.height.toDouble();
+      final aspectRatio = imageWidth / imageHeight;
+      
+      // Calculate available dimensions (A4 minus margins)
+      const pageWidth = 595.28;
+      const pageHeight = 841.89;
+      const margin = 40.0;
+      final availableWidth = pageWidth - (margin * 2);
+      final availableHeight = pageHeight - (margin * 2) - 80;
+      
+      // Calculate image size to fit within available space
+      double imageWidthPdf = availableWidth;
+      double imageHeightPdf = imageWidthPdf / aspectRatio;
+      
+      if (imageHeightPdf > availableHeight) {
+        imageHeightPdf = availableHeight;
+        imageWidthPdf = imageHeightPdf * aspectRatio;
+      }
+
+      // Create PDF document
+      final pdf = pw.Document();
+      final chartTitle = _getChartTitle(chartIndex);
+      final sessionText = sessionId != null 
+          ? 'Session #$sessionId' 
+          : 'All Readings';
+      final exportDate = DateTime.now();
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(margin),
+          build: (pw.Context context) {
+            return pw.Stack(
+              children: [
+                // Title and metadata at top
+                pw.Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisSize: pw.MainAxisSize.min,
+                    children: [
+                      pw.Text(
+                        chartTitle,
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 8),
+                      pw.Text(
+                        '$sessionText • ${exportDate.toLocal().toString().split('.')[0]}',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Chart image centered below the header
+                pw.Positioned(
+                  top: 80,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: pw.Center(
+                    child: pw.Image(
+                      pdfImage,
+                      width: imageWidthPdf,
+                      height: imageHeightPdf,
+                      fit: pw.BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      // Save PDF
+      final dir = await getTemporaryDirectory();
+      final fileName = '${_getExportFileName(chartIndex, sessionId)}.pdf';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(await pdf.save());
+
+      final exportName = _getExportFileName(chartIndex, sessionId);
+      await Share.shareXFiles([XFile(file.path)]);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Chart exported: $chartName')),
+          SnackBar(content: Text('Chart exported as PDF: $exportName')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportAllSensorsChart(int? sessionId) async {
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Exporting all sensors... Please wait.')),
+        );
+      }
+
+      // Store current tab index to restore later
+      final originalTabIndex = _tabController.index;
+      
+      // Create a PDF with all sensor charts
+      final pdf = pw.Document();
+      final sessionText = sessionId != null 
+          ? 'Session #$sessionId' 
+          : 'All Readings';
+      final exportDate = DateTime.now();
+
+      // Chart indices to capture (1-8 for individual sensors)
+      final chartIndices = [1, 2, 3, 4, 5, 6, 7, 8];
+      final chartTitles = [
+        'Moisture',
+        'EC',
+        'Temperature',
+        'pH',
+        'Nitrogen',
+        'Phosphorus',
+        'Potassium',
+        'Salinity',
+      ];
+
+      // Switch to each tab, capture the chart, then move to next
+      for (int i = 0; i < chartIndices.length; i++) {
+        final chartIndex = chartIndices[i];
+        final chartTitle = chartTitles[i];
+
+        // Switch to this tab
+        _tabController.animateTo(chartIndex);
+        await Future.delayed(const Duration(milliseconds: 300)); // Wait for chart to render
+
+        // Capture the chart
+        final image = await _captureChartImage(chartIndex);
+        if (image == null) {
+          print('Failed to capture chart for $chartTitle');
+          continue;
+        }
+
+        final ByteData? byteData =
+            await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) continue;
+
+        final imageBytes = byteData.buffer.asUint8List();
+        final pdfImage = pw.MemoryImage(imageBytes);
+
+        // Calculate image dimensions
+        final imageWidth = image.width.toDouble();
+        final imageHeight = image.height.toDouble();
+        final aspectRatio = imageWidth / imageHeight;
+        
+        const pageWidth = 595.28;
+        const pageHeight = 841.89;
+        const margin = 40.0;
+        final availableWidth = pageWidth - (margin * 2);
+        final availableHeight = pageHeight - (margin * 2) - 80;
+        
+        double imageWidthPdf = availableWidth;
+        double imageHeightPdf = imageWidthPdf / aspectRatio;
+        
+        if (imageHeightPdf > availableHeight) {
+          imageHeightPdf = availableHeight;
+          imageWidthPdf = imageHeightPdf * aspectRatio;
+        }
+
+        // Add page for this chart
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(margin),
+            build: (pw.Context context) {
+              return pw.Stack(
+                children: [
+                  // Title and metadata at top
+                  pw.Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        pw.Text(
+                          chartTitle,
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                        pw.Text(
+                          '$sessionText • ${exportDate.toLocal().toString().split('.')[0]}',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Chart image
+                  pw.Positioned(
+                    top: 80,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: pw.Center(
+                      child: pw.Image(
+                        pdfImage,
+                        width: imageWidthPdf,
+                        height: imageHeightPdf,
+                        fit: pw.BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      // Restore original tab
+      _tabController.animateTo(originalTabIndex);
+
+      // Save PDF
+      final dir = await getTemporaryDirectory();
+      final fileName = '${_getExportFileName(0, sessionId)}.pdf';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(await pdf.save());
+
+      final exportName = _getExportFileName(0, sessionId);
+      await Share.shareXFiles([XFile(file.path)]);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('All sensors exported as PDF: $exportName')),
         );
       }
     } catch (e) {
@@ -131,6 +470,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Watch bluetooth connection status for auto-refresh
+    final bleState = ref.watch(bluetoothServiceProvider);
+    final isConnected = bleState.isConnected;
+    
+    // Setup auto-refresh based on connection status
+    _setupAutoRefresh(isConnected);
+    
     final sessionsAsync = ref.watch(_sessionsProvider);
     final readingIds = sessionsAsync.when(
       data: (sessions) => _getSelectedReadingIds(sessions),
@@ -138,6 +484,24 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       error: (_, __) => null,
     );
     final readingsAsync = ref.watch(_readingsProvider(readingIds));
+    
+    // Get session name for display
+    final selectedSessionName = sessionsAsync.when(
+      data: (sessions) {
+        if (_selectedSessionId == null) return 'All Readings';
+        final session = sessions.firstWhere(
+          (s) => s.id == _selectedSessionId,
+          orElse: () => ReadingSession(
+            id: -1,
+            createdAt: DateTime.now(),
+            readingIds: [],
+          ),
+        );
+        return session.id == -1 ? 'All Readings' : 'Session #${session.id}';
+      },
+      loading: () => 'Loading...',
+      error: (_, __) => 'All Readings',
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -145,7 +509,11 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Theme.of(context).colorScheme.inversePrimary,
           tabs: const [
+            Tab(text: 'All'),
             Tab(text: 'Moisture'),
             Tab(text: 'EC'),
             Tab(text: 'Temperature'),
@@ -154,17 +522,38 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Tab(text: 'Phosphorus'),
             Tab(text: 'Potassium'),
             Tab(text: 'Salinity'),
-            Tab(text: 'All'),
           ],
         ),
         actions: [
           PopupMenuButton<int?>(
             icon: const Icon(Icons.filter_list),
             tooltip: 'Filter by session',
-            onSelected: (value) {
+            onSelected: (value) async {
               setState(() {
-                _selectedSessionId = value;
+                _selectedSessionId = value; // value can be null for "All Readings"
               });
+              
+              // Get sessions fresh to calculate readingIds
+              final sessionsAsyncValue = await ref.read(_sessionsProvider.future);
+              
+              // Calculate new readingIds based on selection
+              List<int>? newReadingIds;
+              if (value == null) {
+                newReadingIds = null; // All readings
+              } else {
+                final session = sessionsAsyncValue.firstWhere(
+                  (s) => s.id == value,
+                  orElse: () => ReadingSession(
+                    id: -1,
+                    createdAt: DateTime.now(),
+                    readingIds: [],
+                  ),
+                );
+                newReadingIds = session.id == -1 ? null : session.readingIds;
+              }
+              
+              // Invalidate the specific provider instance to force reload
+              ref.invalidate(_readingsProvider(newReadingIds));
             },
             itemBuilder: (context) {
               return sessionsAsync.when(
@@ -193,109 +582,148 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             icon: const Icon(Icons.share),
             tooltip: 'Export current chart',
             onPressed: () {
-              final chartNames = [
-                'Moisture',
-                'EC',
-                'Temperature',
-                'pH',
-                'Nitrogen',
-                'Phosphorus',
-                'Potassium',
-                'Salinity',
-                'All_Sensors',
-              ];
-              _exportChart(_tabController.index, chartNames[_tabController.index]);
+              _exportChart(_tabController.index, _selectedSessionId);
             },
           ),
         ],
       ),
-      body: readingsAsync.when(
-        data: (readings) {
-          if (readings.isEmpty) {
-            return const Center(
-              child: Text('No readings available to display'),
-            );
-          }
+      body: Column(
+        children: [
+          // Session indicator banner
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.filter_alt,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Viewing: $selectedSessionName',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                if (isConnected) ...[
+                  const Spacer(),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Live',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Charts content
+          Expanded(
+            child: readingsAsync.when(
+              data: (readings) {
+                if (readings.isEmpty) {
+                  return const Center(
+                    child: Text('No readings available to display'),
+                  );
+                }
 
-          // Sort readings by timestamp
-          final sortedReadings = List<SensorReading>.from(readings)
-            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                // Sort readings by timestamp
+                final sortedReadings = List<SensorReading>.from(readings)
+                  ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _buildChart(
-                sortedReadings,
-                0,
-                'Moisture',
-                '%',
-                (r) => r.moisture,
-                Colors.blue,
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildAllChartsView(sortedReadings),
+                    _buildChart(
+                      sortedReadings,
+                      1,
+                      'Moisture',
+                      '%',
+                      (r) => r.moisture,
+                      Colors.blue,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      2,
+                      'EC',
+                      'mS/cm',
+                      (r) => r.ec,
+                      Colors.green,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      3,
+                      'Temperature',
+                      '°C',
+                      (r) => r.temperature,
+                      Colors.orange,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      4,
+                      'pH',
+                      '',
+                      (r) => r.ph,
+                      Colors.purple,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      5,
+                      'Nitrogen',
+                      'ppm',
+                      (r) => r.nitrogen.toDouble(),
+                      Colors.red,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      6,
+                      'Phosphorus',
+                      'ppm',
+                      (r) => r.phosphorus.toDouble(),
+                      Colors.teal,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      7,
+                      'Potassium',
+                      'ppm',
+                      (r) => r.potassium.toDouble(),
+                      Colors.amber,
+                    ),
+                    _buildChart(
+                      sortedReadings,
+                      8,
+                      'Salinity',
+                      'g/L',
+                      (r) => r.salinity,
+                      Colors.cyan,
+                    ),
+                  ],
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stack) => Center(
+                child: Text('Error loading readings: $error'),
               ),
-              _buildChart(
-                sortedReadings,
-                1,
-                'EC',
-                'mS/cm',
-                (r) => r.ec,
-                Colors.green,
-              ),
-              _buildChart(
-                sortedReadings,
-                2,
-                'Temperature',
-                '°C',
-                (r) => r.temperature,
-                Colors.orange,
-              ),
-              _buildChart(
-                sortedReadings,
-                3,
-                'pH',
-                '',
-                (r) => r.ph,
-                Colors.purple,
-              ),
-              _buildChart(
-                sortedReadings,
-                4,
-                'Nitrogen',
-                'ppm',
-                (r) => r.nitrogen.toDouble(),
-                Colors.red,
-              ),
-              _buildChart(
-                sortedReadings,
-                5,
-                'Phosphorus',
-                'ppm',
-                (r) => r.phosphorus.toDouble(),
-                Colors.teal,
-              ),
-              _buildChart(
-                sortedReadings,
-                6,
-                'Potassium',
-                'ppm',
-                (r) => r.potassium.toDouble(),
-                Colors.amber,
-              ),
-              _buildChart(
-                sortedReadings,
-                7,
-                'Salinity',
-                'g/L',
-                (r) => r.salinity,
-                Colors.cyan,
-              ),
-              _buildAllChartsView(sortedReadings),
-            ],
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Text('Error loading readings: $error'),
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -468,9 +896,11 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   }
 
   Widget _buildAllChartsView(List<SensorReading> readings) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
+    return RepaintBoundary(
+      key: _chartKeys[0],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -545,6 +975,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           ),
         ],
       ),
+    ),
     );
   }
 
