@@ -103,6 +103,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   // ignore: unused_field
   BluetoothCharacteristic? _sensorCharacteristic;
   StreamSubscription<List<int>>? _characteristicSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   final List<int> _pendingReadingIds = [];
   int? _activeCropParamsId;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
@@ -237,6 +238,21 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
         devices: const [],
       );
 
+      // Listen for connection state changes to detect disconnections
+      await _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = device.connectionState.listen(
+        (connectionState) {
+          if (connectionState == BluetoothConnectionState.disconnected) {
+            // Device disconnected (either manually or device turned off)
+            _handleDisconnection();
+          }
+        },
+        onError: (error) {
+          print('Connection state error: $error');
+          _handleDisconnection();
+        },
+      );
+
       // Try to discover the soil sensor characteristic in the background.
       try {
         final services = await device.discoverServices();
@@ -304,7 +320,14 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
         );
       }
     } catch (e) {
-      state = state.copyWith(connectionStatus: 'Connection error: $e');
+      // Connection failed - clean up
+      await _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = null;
+      _connectedDevice = null;
+      state = state.copyWith(
+        connectionStatus: 'Connection error: $e',
+        connectedDeviceName: null,
+      );
     }
   }
 
@@ -404,6 +427,30 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     state = state.copyWith(pendingCount: 0);
   }
 
+  void _handleDisconnection() {
+    // This is called when the device disconnects unexpectedly (e.g., device turned off)
+    // Cancel subscriptions
+    _characteristicSubscription?.cancel();
+    _characteristicSubscription = null;
+    _connectionStateSubscription?.cancel();
+    _connectionStateSubscription = null;
+    
+    // Clear device references
+    _connectedDevice = null;
+    _sensorCharacteristic = null;
+    
+    // Update state to reflect disconnection
+    state = BluetoothStateModel(
+      connectionStatus: 'Disconnected (device disconnected)',
+      connectedDeviceName: null,
+      devices: const [],
+      pendingCount: _pendingReadingIds.length, // Keep pending count so user can save
+      latestReading: state.latestReading, // Preserve latest reading
+    );
+    
+    _shouldIgnoreScanResults = false; // Allow scan results again after disconnect
+  }
+
   Future<void> disconnect() async {
     _shouldIgnoreScanResults = false; // Allow scan results again after disconnect
     await _cancelScan();
@@ -411,6 +458,10 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     // Cancel characteristic subscription and disable notifications
     await _characteristicSubscription?.cancel();
     _characteristicSubscription = null;
+    
+    // Cancel connection state subscription
+    await _connectionStateSubscription?.cancel();
+    _connectionStateSubscription = null;
     
     try {
       // Disable notifications before disconnecting
