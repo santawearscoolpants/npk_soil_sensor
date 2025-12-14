@@ -1,12 +1,22 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+
 import '../../services/export_service.dart';
 import '../../services/permission_service.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../services/session_store.dart';
-import '../charts/charts_screen.dart';
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -239,26 +249,393 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   Future<void> _exportCharts() async {
     setState(() {
       _busy = true;
-      _status = 'Opening charts for export...';
+      _status = 'Exporting charts...';
     });
     
-    // Navigate to charts screen for chart export
-    // The charts screen has a floating action button for export
-    if (!mounted) return;
-    
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const ChartsScreen(),
-      ),
-    ).then((_) {
-      // Refresh status after returning from charts screen
+    try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final allowed = await permissionService.ensureStoragePermission();
+      if (!allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Get readings based on selected session
+      final readingIds = _selectedReadingIds();
+      final sensorRepo = SensorRepository(ref.read(appDatabaseProvider));
+      final readings = readingIds == null
+          ? await sensorRepo.getAllReadings()
+          : await sensorRepo.getReadingsByIds(readingIds);
+
+      if (readings.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _status = 'No readings available to export.';
+            _busy = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No readings available to export')),
+          );
+        }
+        return;
+      }
+
+      // Sort readings by timestamp
+      final sortedReadings = List<SensorReading>.from(readings)
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generating charts... Please wait.')),
+        );
+      }
+
+      // Create PDF with all sensor charts
+      final pdf = pw.Document();
+      final sessionText = _selectedSessionId != null
+          ? 'Session #$_selectedSessionId'
+          : 'All Readings';
+      final exportDate = DateTime.now();
+
+      // Chart configurations: [title, unit, valueExtractor, color]
+      final chartConfigs = [
+        ['Moisture', '%', (SensorReading r) => r.moisture, Colors.blue],
+        ['EC', 'mS/cm', (SensorReading r) => r.ec, Colors.green],
+        ['Temperature', '°C', (SensorReading r) => r.temperature, Colors.orange],
+        ['pH', '', (SensorReading r) => r.ph, Colors.purple],
+        ['Nitrogen', 'ppm', (SensorReading r) => r.nitrogen.toDouble(), Colors.red],
+        ['Phosphorus', 'ppm', (SensorReading r) => r.phosphorus.toDouble(), Colors.teal],
+        ['Potassium', 'ppm', (SensorReading r) => r.potassium.toDouble(), Colors.amber],
+        ['Salinity', 'g/L', (SensorReading r) => r.salinity, Colors.cyan],
+      ];
+
+      // Build and capture each chart
+      for (final config in chartConfigs) {
+        final title = config[0] as String;
+        final unit = config[1] as String;
+        final valueExtractor = config[2] as double Function(SensorReading);
+        final color = config[3] as Color;
+
+        // Create chart widget and capture it
+        final chartImage = await _captureChartWidget(
+          sortedReadings,
+          title,
+          unit,
+          valueExtractor,
+          color,
+        );
+
+        if (chartImage == null) {
+          print('Failed to capture chart for $title');
+          continue;
+        }
+
+        final ByteData? byteData =
+            await chartImage.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) continue;
+
+        final imageBytes = byteData.buffer.asUint8List();
+        final pdfImage = pw.MemoryImage(imageBytes);
+
+        // Calculate image dimensions
+        final imageWidth = chartImage.width.toDouble();
+        final imageHeight = chartImage.height.toDouble();
+        final aspectRatio = imageWidth / imageHeight;
+
+        const pageWidth = 595.28;
+        const pageHeight = 841.89;
+        const margin = 40.0;
+        final availableWidth = pageWidth - (margin * 2);
+        final availableHeight = pageHeight - (margin * 2) - 80;
+
+        double imageWidthPdf = availableWidth;
+        double imageHeightPdf = imageWidthPdf / aspectRatio;
+
+        if (imageHeightPdf > availableHeight) {
+          imageHeightPdf = availableHeight;
+          imageWidthPdf = imageHeightPdf * aspectRatio;
+        }
+
+        // Add page for this chart
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(margin),
+            build: (pw.Context context) {
+              return pw.Stack(
+                children: [
+                  // Title and metadata at top
+                  pw.Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        pw.Text(
+                          title,
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                        pw.Text(
+                          '$sessionText • ${exportDate.toLocal().toString().split('.')[0]}',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Chart image
+                  pw.Positioned(
+                    top: 80,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: pw.Center(
+                      child: pw.Image(
+                        pdfImage,
+                        width: imageWidthPdf,
+                        height: imageHeightPdf,
+                        fit: pw.BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      // Save PDF
+      final dir = await getTemporaryDirectory();
+      final fileName = _selectedSessionId != null
+          ? 'all_readings_session${_selectedSessionId}_chart.pdf'
+          : 'all_readings_chart.pdf';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(await pdf.save());
+
+      await Share.shareXFiles([XFile(file.path)]);
+
       if (mounted) {
         setState(() {
-          _status = 'Returned from charts screen.';
+          _status = 'Charts exported successfully.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Charts exported as PDF')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Error exporting charts: $e';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
           _busy = false;
         });
       }
-    });
+    }
+  }
+
+  Future<ui.Image?> _captureChartWidget(
+    List<SensorReading> readings,
+    String title,
+    String unit,
+    double Function(SensorReading) valueExtractor,
+    Color color,
+  ) async {
+    if (readings.isEmpty) return null;
+
+    // Prepare chart data
+    final spots = readings.asMap().entries.map((entry) {
+      final index = entry.key.toDouble();
+      final value = valueExtractor(entry.value);
+      return FlSpot(index, value);
+    }).toList();
+
+    final values = readings.map(valueExtractor).toList();
+    final minValue = values.reduce((a, b) => a < b ? a : b);
+    final maxValue = values.reduce((a, b) => a > b ? a : b);
+    final range = maxValue - minValue;
+    final padding = range > 0 ? range * 0.1 : (minValue.abs() * 0.1 + 1);
+    final yMin = minValue - padding;
+    final yMax = maxValue + padding;
+
+    // Create a widget tree with the chart
+    final key = GlobalKey();
+    final chartWidget = RepaintBoundary(
+      key: key,
+      child: Container(
+        width: 800,
+        height: 600,
+        color: Colors.white,
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$title ($unit)',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: (yMax - yMin) / 5,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.withOpacity(0.2),
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 30,
+                        interval: (readings.length / 5).ceil().toDouble(),
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index >= 0 && index < readings.length) {
+                            final time = readings[index].timestamp;
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 50,
+                        interval: (yMax - yMin) / 5,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                  ),
+                  minX: 0,
+                  maxX: (readings.length - 1).toDouble(),
+                  minY: yMin,
+                  maxY: yMax,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      color: color,
+                      barWidth: 2,
+                      isStrokeCapRound: true,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: color.withOpacity(0.1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Render the widget to an image
+    // We need to use a BuildContext, so we'll use the current context
+    if (!mounted) return null;
+
+    try {
+      // Create an overlay entry to render the widget off-screen
+      final overlay = Overlay.of(context);
+      final overlayEntry = OverlayEntry(
+        builder: (context) => Positioned(
+          left: -10000, // Off-screen
+          top: -10000,
+          child: Material(
+            type: MaterialType.transparency,
+            child: chartWidget,
+          ),
+        ),
+      );
+
+      overlay.insert(overlayEntry);
+
+      // Wait for the widget to render
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Get the render object and capture
+      final renderObject = key.currentContext?.findRenderObject();
+      RenderRepaintBoundary? boundary;
+      if (renderObject is RenderRepaintBoundary) {
+        boundary = renderObject;
+      } else {
+        overlayEntry.remove();
+        return null;
+      }
+
+      await Future.delayed(const Duration(milliseconds: 100));
+      final image = await boundary.toImage(pixelRatio: 2.0);
+
+      overlayEntry.remove();
+      return image;
+    } catch (e) {
+      print('Error capturing chart: $e');
+      return null;
+    }
   }
 
   Future<void> _clearAllData() async {

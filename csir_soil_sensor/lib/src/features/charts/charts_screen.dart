@@ -580,13 +580,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          _exportChart(_tabController.index, _selectedSessionId);
-        },
-        icon: const Icon(Icons.share),
-        label: const Text('Export Chart'),
-      ),
       body: Column(
         children: [
           // Session indicator banner
