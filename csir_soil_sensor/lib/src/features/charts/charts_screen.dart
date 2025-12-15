@@ -35,6 +35,9 @@ final sensorRepoProvider = Provider<SensorRepository>((ref) {
   return SensorRepository(db);
 });
 
+// Provider to persist the selected session ID across tab navigation
+final _selectedSessionIdProvider = StateProvider<int?>((ref) => null);
+
 class ChartsScreen extends ConsumerStatefulWidget {
   const ChartsScreen({super.key});
 
@@ -44,7 +47,6 @@ class ChartsScreen extends ConsumerStatefulWidget {
 
 class _ChartsScreenState extends ConsumerState<ChartsScreen>
     with SingleTickerProviderStateMixin {
-  int? _selectedSessionId;
   late TabController _tabController;
   final Map<int, GlobalKey> _chartKeys = {};
 
@@ -64,10 +66,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     super.dispose();
   }
 
-  List<int>? _getSelectedReadingIds(List<ReadingSession> sessions) {
-    if (_selectedSessionId == null) return null;
+  List<int>? _getSelectedReadingIds(List<ReadingSession> sessions, int? selectedSessionId) {
+    if (selectedSessionId == null) return null;
     final session = sessions.firstWhere(
-      (s) => s.id == _selectedSessionId,
+      (s) => s.id == selectedSessionId,
       orElse: () => ReadingSession(
         id: -1,
         createdAt: DateTime.now(),
@@ -453,9 +455,12 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Get the selected session ID from the persistent provider
+    final selectedSessionId = ref.watch(_selectedSessionIdProvider);
+    
     final sessionsAsync = ref.watch(_sessionsProvider);
     final readingIds = sessionsAsync.when(
-      data: (sessions) => _getSelectedReadingIds(sessions),
+      data: (sessions) => _getSelectedReadingIds(sessions, selectedSessionId),
       loading: () => null,
       error: (_, __) => null,
     );
@@ -464,9 +469,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     // Get session name for display
     final selectedSessionName = sessionsAsync.when(
       data: (sessions) {
-        if (_selectedSessionId == null) return 'All Readings';
+        if (selectedSessionId == null) return 'All Readings';
         final session = sessions.firstWhere(
-          (s) => s.id == _selectedSessionId,
+          (s) => s.id == selectedSessionId,
           orElse: () => ReadingSession(
             id: -1,
             createdAt: DateTime.now(),
@@ -505,43 +510,48 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             icon: const Icon(Icons.filter_list),
             tooltip: 'Filter by session',
             onSelected: (value) async {
-              setState(() {
-                _selectedSessionId = value; // value can be null for "All Readings"
-              });
+              // Update the persistent provider - this will trigger a rebuild
+              ref.read(_selectedSessionIdProvider.notifier).state = value;
               
-              // Get sessions fresh to calculate readingIds
-              final sessionsAsyncValue = await ref.read(_sessionsProvider.future);
+              // Invalidate sessions provider first to ensure fresh data
+              ref.invalidate(_sessionsProvider);
               
-              // Calculate new readingIds based on selection
-              List<int>? newReadingIds;
-              if (value == null) {
-                newReadingIds = null; // All readings
-              } else {
-                final session = sessionsAsyncValue.firstWhere(
-                  (s) => s.id == value,
-                  orElse: () => ReadingSession(
-                    id: -1,
-                    createdAt: DateTime.now(),
-                    readingIds: [],
-                  ),
-                );
-                newReadingIds = session.id == -1 ? null : session.readingIds;
-              }
+              // Get fresh sessions data to calculate readingIds
+              final sessions = await ref.read(_sessionsProvider.future);
               
-              // Invalidate the specific provider instance to force reload
-              ref.invalidate(_readingsProvider(newReadingIds));
+              // Calculate readingIds using the same method as in build()
+              final readingIds = _getSelectedReadingIds(sessions, value);
+              
+              // Invalidate the readings provider with the calculated readingIds
+              // This will force the widget to refresh when it rebuilds
+              ref.invalidate(_readingsProvider(readingIds));
             },
             itemBuilder: (context) {
+              final currentSelectedId = ref.read(_selectedSessionIdProvider);
               return sessionsAsync.when(
                 data: (sessions) => [
-                  const PopupMenuItem<int?>(
+                  PopupMenuItem<int?>(
                     value: null,
-                    child: Text('All Readings'),
+                    child: Row(
+                      children: [
+                        if (currentSelectedId == null)
+                          const Icon(Icons.check, size: 20, color: Colors.green),
+                        if (currentSelectedId == null) const SizedBox(width: 8),
+                        const Text('All Readings'),
+                      ],
+                    ),
                   ),
                   ...sessions.map(
                     (session) => PopupMenuItem<int?>(
                       value: session.id,
-                      child: Text('Session #${session.id}'),
+                      child: Row(
+                        children: [
+                          if (currentSelectedId == session.id)
+                            const Icon(Icons.check, size: 20, color: Colors.green),
+                          if (currentSelectedId == session.id) const SizedBox(width: 8),
+                          Text('Session #${session.id}'),
+                        ],
+                      ),
                     ),
                   ),
                 ],
