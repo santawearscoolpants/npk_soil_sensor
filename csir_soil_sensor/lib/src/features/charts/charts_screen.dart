@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -15,7 +14,6 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
-import '../../services/bluetooth_service.dart';
 
 final _sessionsProvider =
     FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
@@ -49,7 +47,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   int? _selectedSessionId;
   late TabController _tabController;
   final Map<int, GlobalKey> _chartKeys = {};
-  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -61,27 +58,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     }
   }
 
-  void _setupAutoRefresh(bool isConnected) {
-    _refreshTimer?.cancel();
-    if (isConnected) {
-      // Auto-refresh every 3 seconds when connected
-      _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-        if (mounted) {
-          // Get current readingIds to invalidate the correct provider instance
-          final sessionsAsync = ref.read(_sessionsProvider);
-          sessionsAsync.whenData((sessions) {
-            final readingIds = _getSelectedReadingIds(sessions);
-            ref.invalidate(_readingsProvider(readingIds));
-          });
-          ref.invalidate(_sessionsProvider);
-        }
-      });
-    }
-  }
-
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -475,13 +453,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Watch bluetooth connection status for auto-refresh
-    final bleState = ref.watch(bluetoothServiceProvider);
-    final isConnected = bleState.isConnected;
-    
-    // Setup auto-refresh based on connection status
-    _setupAutoRefresh(isConnected);
-    
     final sessionsAsync = ref.watch(_sessionsProvider);
     final readingIds = sessionsAsync.when(
       data: (sessions) => _getSelectedReadingIds(sessions),
@@ -608,25 +579,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                   ),
                 ),
-                if (isConnected) ...[
-                  const Spacer(),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Live',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
