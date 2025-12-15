@@ -506,8 +506,22 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     }
     
     final sessionsAsync = ref.watch(_sessionsProvider);
+    
+    // Auto-select first session if none is selected and sessions exist
+    sessionsAsync.whenData((sessions) {
+      if (sessions.isNotEmpty && selectedSessionId == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(_selectedSessionIdProvider.notifier).state = sessions.first.id;
+        });
+      }
+    });
+    
     final readingIds = sessionsAsync.when(
-      data: (sessions) => _getSelectedReadingIds(sessions, selectedSessionId),
+      data: (sessions) {
+        // If no session selected, use first session if available
+        final effectiveSessionId = selectedSessionId ?? (sessions.isNotEmpty ? sessions.first.id : null);
+        return _getSelectedReadingIds(sessions, effectiveSessionId);
+      },
       loading: () => null,
       error: (_, __) => null,
     );
@@ -516,19 +530,20 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     // Get session name for display
     final selectedSessionName = sessionsAsync.when(
       data: (sessions) {
-        if (selectedSessionId == null) return 'All Readings';
+        if (sessions.isEmpty) return 'No sessions';
+        final effectiveSessionId = selectedSessionId ?? sessions.first.id;
         final session = sessions.firstWhere(
-          (s) => s.id == selectedSessionId,
+          (s) => s.id == effectiveSessionId,
           orElse: () => ReadingSession(
             id: -1,
             createdAt: DateTime.now(),
             readingIds: [],
           ),
         );
-        return session.id == -1 ? 'All Readings' : 'Session #${session.id}';
+        return session.id == -1 ? 'No session' : 'Session #${session.id}';
       },
       loading: () => 'Loading...',
-      error: (_, __) => 'All Readings',
+      error: (_, __) => 'Error',
     );
 
     // Return early if TabController is not initialized yet
@@ -575,19 +590,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
               // Watch the provider so the checkmark updates when selection changes
               final currentSelectedId = ref.watch(_selectedSessionIdProvider);
               return sessionsAsync.when(
-                data: (sessions) => [
-                  PopupMenuItem<int?>(
-                    value: null,
-                    child: Row(
-                      children: [
-                        if (currentSelectedId == null)
-                          const Icon(Icons.check, size: 20, color: Colors.green),
-                        if (currentSelectedId == null) const SizedBox(width: 8),
-                        const Text('All Readings'),
-                      ],
-                    ),
-                  ),
-                  ...sessions.map(
+                data: (sessions) {
+                  if (sessions.isEmpty) {
+                    return [
+                      const PopupMenuItem(child: Text('No sessions available')),
+                    ];
+                  }
+                  return sessions.map(
                     (session) => PopupMenuItem<int?>(
                       value: session.id,
                       child: Row(
@@ -599,8 +608,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  ).toList();
+                },
                 loading: () => [
                   const PopupMenuItem(child: Text('Loading...')),
                 ],
