@@ -730,7 +730,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         appBar: AppBar(
           title: const Text('Export & Share'),
         ),
-        body: Padding(
+        body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
