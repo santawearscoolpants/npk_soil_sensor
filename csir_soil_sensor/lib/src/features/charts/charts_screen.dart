@@ -21,6 +21,12 @@ final _sessionsProvider =
   return sessionStore.loadSessions();
 });
 
+// Provider to persist the selected session ID across tab navigation
+final _selectedSessionIdProvider = StateProvider<int?>((ref) => null);
+
+// Provider to persist the selected chart tab index across tab navigation
+final _selectedChartTabIndexProvider = StateProvider<int>((ref) => 0);
+
 // Export the provider so it can be invalidated from other screens
 final readingsProvider = FutureProvider.family
     .autoDispose<List<SensorReading>, List<int>?>((ref, readingIds) async {
@@ -52,22 +58,43 @@ class ChartsScreen extends ConsumerStatefulWidget {
 
 class _ChartsScreenState extends ConsumerState<ChartsScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
   final Map<int, GlobalKey> _chartKeys = {};
+  bool _tabControllerInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 9, vsync: this);
     // Initialize global keys for each chart
     for (int i = 0; i < 9; i++) {
       _chartKeys[i] = GlobalKey();
     }
   }
 
+  void _initializeTabController(WidgetRef ref) {
+    if (_tabController != null) return;
+    
+    // Get the persisted tab index from the provider
+    final initialTabIndex = ref.read(_selectedChartTabIndexProvider);
+    _tabController = TabController(
+      length: 9,
+      vsync: this,
+      initialIndex: initialTabIndex,
+    );
+    
+    // Listen to tab changes and persist the index
+    _tabController!.addListener(() {
+      if (!_tabController!.indexIsChanging && _tabControllerInitialized) {
+        ref.read(_selectedChartTabIndexProvider.notifier).state = _tabController!.index;
+      }
+    });
+    
+    _tabControllerInitialized = true;
+  }
+
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -299,7 +326,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       }
 
       // Store current tab index to restore later
-      final originalTabIndex = _tabController.index;
+      if (_tabController == null) return;
+      final originalTabIndex = _tabController!.index;
       
       // Create a PDF with all sensor charts
       final pdf = pw.Document();
@@ -327,7 +355,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         final chartTitle = chartTitles[i];
 
         // Switch to this tab
-        _tabController.animateTo(chartIndex);
+        _tabController?.animateTo(chartIndex);
         await Future.delayed(const Duration(milliseconds: 300)); // Wait for chart to render
 
         // Capture the chart
@@ -421,7 +449,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       }
 
       // Restore original tab
-      _tabController.animateTo(originalTabIndex);
+      _tabController?.animateTo(originalTabIndex);
 
       // Save PDF
       final dir = await getTemporaryDirectory();
@@ -446,10 +474,69 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     }
   }
 
+  List<int>? _getSelectedReadingIds(List<ReadingSession> sessions, int? selectedSessionId) {
+    if (selectedSessionId == null) return null; // null means "All Readings"
+    final session = sessions.firstWhere(
+      (s) => s.id == selectedSessionId,
+      orElse: () => ReadingSession(
+        id: -1,
+        createdAt: DateTime.now(),
+        readingIds: [],
+      ),
+    );
+    return session.id == -1 ? null : session.readingIds;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Always fetch all readings - no filtering
-    final readingsAsync = ref.watch(_readingsProvider(null));
+    // Initialize TabController on first build
+    _initializeTabController(ref);
+    
+    // Get the selected session ID from the persistent provider
+    final selectedSessionId = ref.watch(_selectedSessionIdProvider);
+    
+    // Get the persisted tab index and sync TabController if needed
+    final persistedTabIndex = ref.watch(_selectedChartTabIndexProvider);
+    if (_tabController != null && _tabController!.index != persistedTabIndex && !_tabController!.indexIsChanging) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_tabController != null && _tabController!.index != persistedTabIndex) {
+          _tabController!.animateTo(persistedTabIndex);
+        }
+      });
+    }
+    
+    final sessionsAsync = ref.watch(_sessionsProvider);
+    final readingIds = sessionsAsync.when(
+      data: (sessions) => _getSelectedReadingIds(sessions, selectedSessionId),
+      loading: () => null,
+      error: (_, __) => null,
+    );
+    final readingsAsync = ref.watch(_readingsProvider(readingIds));
+    
+    // Get session name for display
+    final selectedSessionName = sessionsAsync.when(
+      data: (sessions) {
+        if (selectedSessionId == null) return 'All Readings';
+        final session = sessions.firstWhere(
+          (s) => s.id == selectedSessionId,
+          orElse: () => ReadingSession(
+            id: -1,
+            createdAt: DateTime.now(),
+            readingIds: [],
+          ),
+        );
+        return session.id == -1 ? 'All Readings' : 'Session #${session.id}';
+      },
+      loading: () => 'Loading...',
+      error: (_, __) => 'All Readings',
+    );
+
+    // Return early if TabController is not initialized yet
+    if (_tabController == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -460,6 +547,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.grey,
           indicatorColor: Theme.of(context).colorScheme.inversePrimary,
+          onTap: (index) {
+            // Update the persisted tab index when user taps a tab
+            ref.read(_selectedChartTabIndexProvider.notifier).state = index;
+          },
           tabs: const [
             Tab(text: 'All'),
             Tab(text: 'Moisture'),
@@ -472,8 +563,84 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Tab(text: 'Salinity'),
           ],
         ),
+        actions: [
+          PopupMenuButton<int?>(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter by session',
+            onSelected: (value) {
+              // Update the persistent provider - this will trigger a rebuild
+              ref.read(_selectedSessionIdProvider.notifier).state = value;
+            },
+            itemBuilder: (context) {
+              // Watch the provider so the checkmark updates when selection changes
+              final currentSelectedId = ref.watch(_selectedSessionIdProvider);
+              return sessionsAsync.when(
+                data: (sessions) => [
+                  PopupMenuItem<int?>(
+                    value: null,
+                    child: Row(
+                      children: [
+                        if (currentSelectedId == null)
+                          const Icon(Icons.check, size: 20, color: Colors.green),
+                        if (currentSelectedId == null) const SizedBox(width: 8),
+                        const Text('All Readings'),
+                      ],
+                    ),
+                  ),
+                  ...sessions.map(
+                    (session) => PopupMenuItem<int?>(
+                      value: session.id,
+                      child: Row(
+                        children: [
+                          if (currentSelectedId == session.id)
+                            const Icon(Icons.check, size: 20, color: Colors.green),
+                          if (currentSelectedId == session.id) const SizedBox(width: 8),
+                          Text('Session #${session.id}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                loading: () => [
+                  const PopupMenuItem(child: Text('Loading...')),
+                ],
+                error: (_, __) => [
+                  const PopupMenuItem(child: Text('Error loading sessions')),
+                ],
+              );
+            },
+          ),
+        ],
       ),
-      body: readingsAsync.when(
+      body: Column(
+        children: [
+          // Session indicator banner
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.filter_alt,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Viewing: $selectedSessionName',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Charts content
+          Expanded(
+            child: readingsAsync.when(
               data: (readings) {
                 if (readings.isEmpty) {
                   return const Center(
@@ -561,6 +728,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                 child: Text('Error loading readings: $error'),
               ),
             ),
+          ),
+        ],
+      ),
     );
   }
 
