@@ -13,15 +13,29 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
+import '../../services/session_store.dart';
 
-final _readingsProvider = FutureProvider.family
+final _sessionsProvider =
+    FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
+  final sessionStore = ref.read(sessionStoreProvider);
+  return sessionStore.loadSessions();
+});
+
+// Export the provider so it can be invalidated from other screens
+final readingsProvider = FutureProvider.family
     .autoDispose<List<SensorReading>, List<int>?>((ref, readingIds) async {
+  // Watch sessions provider so readings refresh when sessions change
+  ref.watch(_sessionsProvider);
+  
   final sensorRepo = ref.read(sensorRepoProvider);
   if (readingIds == null) {
     return await sensorRepo.getAllReadings();
   }
   return await sensorRepo.getReadingsByIds(readingIds);
 });
+
+// Keep the private version for internal use
+final _readingsProvider = readingsProvider;
 
 final sensorRepoProvider = Provider<SensorRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);

@@ -521,7 +521,8 @@ Future<void> _deleteSession(
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session deleted')),
       );
-      // Refresh the sessions list
+      // Refresh the sessions list - this will automatically refresh readings provider
+      // since readings provider watches sessions provider
       ref.invalidate(_sessionsProvider);
     }
   } catch (e) {
@@ -560,11 +561,21 @@ Future<void> _showClearAllDialog(BuildContext context, WidgetRef ref) async {
   if (confirmed == true && context.mounted) {
     try {
       final sessionStore = ref.read(sessionStoreProvider);
+      
+      // Delete all readings from the database
+      final sensorRepo = ref.read(_sensorRepoProvider);
+      // Use deleteAllReadings for efficiency instead of deleting one by one
+      await sensorRepo.deleteAllReadings();
+      
+      // Clear the session store
       await sessionStore.saveSessions([]);
+      
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('All sessions deleted')),
         );
+        // Invalidate sessions provider - this will automatically refresh readings provider
+        // since readings provider watches sessions provider
         ref.invalidate(_sessionsProvider);
       }
     } catch (e) {
