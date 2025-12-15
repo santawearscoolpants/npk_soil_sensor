@@ -67,7 +67,12 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       // Auto-refresh every 3 seconds when connected
       _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         if (mounted) {
-          ref.invalidate(_readingsProvider);
+          // Get current readingIds to invalidate the correct provider instance
+          final sessionsAsync = ref.read(_sessionsProvider);
+          sessionsAsync.whenData((sessions) {
+            final readingIds = _getSelectedReadingIds(sessions);
+            ref.invalidate(_readingsProvider(readingIds));
+          });
           ref.invalidate(_sessionsProvider);
         }
       });
