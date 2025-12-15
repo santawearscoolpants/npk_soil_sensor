@@ -73,12 +73,31 @@
    - **Delete session**: Remove the session and all its readings
 5. **Clear all sessions**: Tap the delete icon in the app bar to remove all sessions.
 
-### 5. Export & Share Data
+### 5. Viewing Charts
+
+1. Go to the **Charts** tab.
+2. **Filter by session**:
+   - Tap the filter icon (☰) in the app bar.
+   - Select a session from the dropdown menu.
+   - The selected session persists across tab navigation until the app is closed.
+   - The banner at the top shows which session you're viewing.
+3. **Navigate between sensor charts**:
+   - Use the tabs at the top: **All**, **Moisture**, **EC**, **Temperature**, **pH**, **Nitrogen**, **Phosphorus**, **Potassium**, **Salinity**.
+   - Your selected tab persists when navigating to other tabs and returning.
+   - The "All" tab shows compact charts for all sensors in a scrollable view.
+4. **Chart features**:
+   - Interactive line charts showing sensor trends over time.
+   - X-axis shows time (HH:MM format).
+   - Y-axis shows sensor values with automatic scaling.
+   - Touch any point on the chart to see detailed values and timestamp.
+   - Charts only display data from saved sessions (no live updates).
+
+### 6. Export & Share Data
 
 1. Go to the **Export** tab.
-2. **Select a session** (optional):
-   - Choose a specific session from the dropdown, or
-   - Select "All readings" to export everything.
+2. **Select a session**:
+   - Choose a specific session from the dropdown.
+   - Charts will be exported based on the selected session.
 3. Choose one of the export options:
    - **Export Sensor Data (CSV)**
      - Exports sensor readings with sequential IDs (starting from 1).
@@ -91,6 +110,10 @@
      - Shows average values for each session (not individual readings).
      - Includes date/time ranges, linked crop parameters, and summary sentences.
      - Includes a table of all crop parameter sets.
+   - **Export Charts (PDF)**
+     - Exports all sensor charts as a multi-page PDF.
+     - Each sensor gets its own page with the chart visualization.
+     - Based on the selected session in the dropdown.
    - **Export Crop Parameters (CSV)**
      - Exports all crop parameter sets with their details and image filenames.
    - **Export Images**
@@ -98,7 +121,7 @@
 4. On the platform share sheet:
    - Choose **Google Drive**, **Files**, **Email**, etc. to send or store the export.
 
-### 6. BLE Payload and Firmware Integration
+### 7. BLE Payload and Firmware Integration
 
 #### ESP32 BLE Configuration
 
@@ -139,7 +162,7 @@ UTF-8 encoded JSON string sent as BLE notifications:
 - UUIDs and constants: `bluetooth_constants.dart`
 - UUID normalization: App handles both short (16-bit) and full (128-bit) UUID formats
 
-### 7. Troubleshooting
+### 8. Troubleshooting
 
 #### BLE Connection Issues
 
@@ -193,7 +216,7 @@ UTF-8 encoded JSON string sent as BLE notifications:
   - Red outlines appear only after attempting to save.
   - Fill in all required fields before saving.
 
-### 8. Best Practices
+### 9. Best Practices
 
 1. **Session Management**
    - Save readings regularly to create manageable sessions.
@@ -207,8 +230,15 @@ UTF-8 encoded JSON string sent as BLE notifications:
 
 3. **Data Export**
    - Export sessions individually for focused analysis.
-   - Use "All readings" only when you need a complete dataset.
+   - Use chart export for visual presentations and reports.
    - PDF reports are best for summaries; CSV for detailed analysis.
+   - Charts are exported based on the session selected in the Export tab.
+
+4. **Charts**
+   - Filter by session to view trends for specific data collection periods.
+   - Use the "All" tab for a quick overview of all sensors.
+   - Individual sensor tabs provide detailed views with better scaling.
+   - Your filter and tab selections persist when navigating between tabs.
 
 4. **BLE Connection**
    - Disconnect properly to avoid data loss (you'll be prompted to save).

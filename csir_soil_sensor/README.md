@@ -9,7 +9,8 @@ Flutter app for farmers to read NPK soil data from an ESP32-WROOM-DA over Blueto
 - **Session Management**: Group readings into logical sessions for better organization
 - **Crop Parameters**: Define and manage crop parameter sets with image uploads
 - **History View**: Browse reading sessions with detailed summaries
-- **Data Export**: Export sensor data as CSV or PDF reports with session-based summaries
+- **Interactive Charts**: Visualize sensor data trends with interactive line charts, filterable by session
+- **Data Export**: Export sensor data as CSV or PDF reports, including chart exports
 - **Offline-First**: All data stored locally using SQLite (Drift)
 
 ## Project Structure
@@ -24,8 +25,9 @@ Flutter app for farmers to read NPK soil data from an ESP32-WROOM-DA over Blueto
     - `bluetooth/`: Bluetooth connection and device scanning screen
     - `live/`: Live sensor data display with automatic session saving
     - `history/`: Session-based history view with detailed summaries
+    - `charts/`: Interactive charts for visualizing sensor data trends
     - `crop_params/`: Crop parameter form with image uploads and management
-    - `export/`: Export CSV/PDF reports with session filtering
+    - `export/`: Export CSV/PDF reports and charts with session filtering
   - `src/services/`:
     - `bluetooth_service.dart`: BLE scanning, connection, and data reception
     - `export_service.dart`: CSV/PDF generation and sharing
@@ -67,6 +69,7 @@ Flutter app for farmers to read NPK soil data from an ESP32-WROOM-DA over Blueto
 - **State Management**: `flutter_riverpod`
 - **BLE**: `flutter_blue_plus`
 - **Database**: `drift` + `sqlite3_flutter_libs`
+- **Charts**: `fl_chart`
 - **Images & Storage**: `image_picker`, `path_provider`, `permission_handler`
 - **Export**: `csv`, `pdf`, `printing`, `share_plus`
 
@@ -157,10 +160,23 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
    - Delete: Tap the delete icon to remove a set
    - Multi-select: Tap the checklist icon to select multiple sets for bulk deletion
 
+### Charts Visualization
+
+1. Navigate to the **Charts** tab
+2. **Filter by session**:
+   - Tap the filter icon in the app bar
+   - Select a session from the dropdown
+   - The selected session persists across tab navigation
+3. **View sensor charts**:
+   - Use tabs to switch between: All, Moisture, EC, Temperature, pH, Nitrogen, Phosphorus, Potassium, Salinity
+   - Your selected tab persists when navigating away and returning
+   - Interactive charts show trends over time with touch tooltips
+   - Charts only display data from saved sessions (no live updates)
+
 ### Data Export
 
 1. Navigate to the **Export** tab
-2. Select a session from the dropdown (or "All readings" for everything)
+2. Select a session from the dropdown
 3. Export options:
    - **Sensor Data (CSV)**: Raw sensor readings with sequential IDs (starting from 1)
    - **Sensor + Params (CSV)**: Combined data with crop parameters and image filenames
@@ -169,6 +185,7 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
      - Date and time ranges
      - Linked crop parameters
      - Summary sentences for each session
+   - **Export Charts (PDF)**: Multi-page PDF with individual charts for each sensor
    - **Crop Parameters (CSV)**: All crop parameter sets
    - **Export Images**: Share all uploaded crop images
 4. All exports use the platform share sheet for easy sharing
