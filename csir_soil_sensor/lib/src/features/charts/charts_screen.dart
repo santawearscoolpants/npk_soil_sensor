@@ -13,13 +13,6 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
-import '../../services/session_store.dart';
-
-final _sessionsProvider =
-    FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
-  final sessionStore = ref.read(sessionStoreProvider);
-  return sessionStore.loadSessions();
-});
 
 final _readingsProvider = FutureProvider.family
     .autoDispose<List<SensorReading>, List<int>?>((ref, readingIds) async {
@@ -35,8 +28,6 @@ final sensorRepoProvider = Provider<SensorRepository>((ref) {
   return SensorRepository(db);
 });
 
-// Provider to persist the selected session ID across tab navigation
-final _selectedSessionIdProvider = StateProvider<int?>((ref) => null);
 
 class ChartsScreen extends ConsumerStatefulWidget {
   const ChartsScreen({super.key});
@@ -66,18 +57,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     super.dispose();
   }
 
-  List<int>? _getSelectedReadingIds(List<ReadingSession> sessions, int? selectedSessionId) {
-    if (selectedSessionId == null) return null;
-    final session = sessions.firstWhere(
-      (s) => s.id == selectedSessionId,
-      orElse: () => ReadingSession(
-        id: -1,
-        createdAt: DateTime.now(),
-        readingIds: [],
-      ),
-    );
-    return session.id == -1 ? null : session.readingIds;
-  }
 
   String _getExportFileName(int chartIndex, int? sessionId) {
     final chartNames = [
@@ -455,34 +434,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Get the selected session ID from the persistent provider
-    final selectedSessionId = ref.watch(_selectedSessionIdProvider);
-    
-    final sessionsAsync = ref.watch(_sessionsProvider);
-    final readingIds = sessionsAsync.when(
-      data: (sessions) => _getSelectedReadingIds(sessions, selectedSessionId),
-      loading: () => null,
-      error: (_, __) => null,
-    );
-    final readingsAsync = ref.watch(_readingsProvider(readingIds));
-    
-    // Get session name for display
-    final selectedSessionName = sessionsAsync.when(
-      data: (sessions) {
-        if (selectedSessionId == null) return 'All Readings';
-        final session = sessions.firstWhere(
-          (s) => s.id == selectedSessionId,
-          orElse: () => ReadingSession(
-            id: -1,
-            createdAt: DateTime.now(),
-            readingIds: [],
-          ),
-        );
-        return session.id == -1 ? 'All Readings' : 'Session #${session.id}';
-      },
-      loading: () => 'Loading...',
-      error: (_, __) => 'All Readings',
-    );
+    // Always fetch all readings - no filtering
+    final readingsAsync = ref.watch(_readingsProvider(null));
 
     return Scaffold(
       appBar: AppBar(
@@ -505,96 +458,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Tab(text: 'Salinity'),
           ],
         ),
-        actions: [
-          PopupMenuButton<int?>(
-            icon: const Icon(Icons.filter_list),
-            tooltip: 'Filter by session',
-            onSelected: (value) async {
-              // Update the persistent provider - this will trigger a rebuild
-              ref.read(_selectedSessionIdProvider.notifier).state = value;
-              
-              // Invalidate sessions provider first to ensure fresh data
-              ref.invalidate(_sessionsProvider);
-              
-              // Get fresh sessions data to calculate readingIds
-              final sessions = await ref.read(_sessionsProvider.future);
-              
-              // Calculate readingIds using the same method as in build()
-              final readingIds = _getSelectedReadingIds(sessions, value);
-              
-              // Invalidate the readings provider with the calculated readingIds
-              // This will force the widget to refresh when it rebuilds
-              ref.invalidate(_readingsProvider(readingIds));
-            },
-            itemBuilder: (context) {
-              final currentSelectedId = ref.read(_selectedSessionIdProvider);
-              return sessionsAsync.when(
-                data: (sessions) => [
-                  PopupMenuItem<int?>(
-                    value: null,
-                    child: Row(
-                      children: [
-                        if (currentSelectedId == null)
-                          const Icon(Icons.check, size: 20, color: Colors.green),
-                        if (currentSelectedId == null) const SizedBox(width: 8),
-                        const Text('All Readings'),
-                      ],
-                    ),
-                  ),
-                  ...sessions.map(
-                    (session) => PopupMenuItem<int?>(
-                      value: session.id,
-                      child: Row(
-                        children: [
-                          if (currentSelectedId == session.id)
-                            const Icon(Icons.check, size: 20, color: Colors.green),
-                          if (currentSelectedId == session.id) const SizedBox(width: 8),
-                          Text('Session #${session.id}'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-                loading: () => [
-                  const PopupMenuItem(child: Text('Loading...')),
-                ],
-                error: (_, __) => [
-                  const PopupMenuItem(child: Text('Error loading sessions')),
-                ],
-              );
-            },
-          ),
-        ],
       ),
-      body: Column(
-        children: [
-          // Session indicator banner
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.filter_alt,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Viewing: $selectedSessionName',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Charts content
-          Expanded(
-            child: readingsAsync.when(
+      body: readingsAsync.when(
               data: (readings) {
                 if (readings.isEmpty) {
                   return const Center(
@@ -682,9 +547,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                 child: Text('Error loading readings: $error'),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 
