@@ -207,6 +207,94 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     return await sensorRepo.getReadingsByIds(allReadingIds);
   }
 
+  /// Show date range picker dialog
+  Future<void> _showDateRangePicker(BuildContext context, WidgetRef ref) async {
+    final currentRange = ref.read(_dateRangeProvider);
+    final initialRange = currentRange ?? DateTimeRange(
+      start: DateTime.now().subtract(const Duration(days: 7)),
+      end: DateTime.now(),
+    );
+
+    final pickedRange = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: initialRange,
+      helpText: 'Select date range for charts',
+      cancelText: 'Clear',
+      confirmText: 'Apply',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).colorScheme.primary,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (pickedRange != null) {
+      ref.read(_dateRangeProvider.notifier).state = pickedRange;
+    } else if (pickedRange == null && currentRange != null) {
+      // User tapped "Clear" - remove filter
+      ref.read(_dateRangeProvider.notifier).state = null;
+    }
+  }
+
+  /// Show session comparison dialog
+  Future<void> _showSessionComparisonDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<ReadingSession>> sessionsAsync,
+  ) async {
+    await sessionsAsync.when(
+      data: (sessions) async {
+        if (sessions.isEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No sessions available for comparison')),
+            );
+          }
+          return;
+        }
+
+        final currentComparisonIds = List<int>.from(ref.read(_comparisonSessionIdsProvider));
+        final selectedIds = <int>{...currentComparisonIds};
+
+        if (!context.mounted) return;
+        final result = await showDialog<Set<int>>(
+          context: context,
+          builder: (context) => _SessionComparisonDialog(
+            sessions: sessions,
+            selectedIds: selectedIds,
+          ),
+        );
+
+        if (result != null) {
+          ref.read(_comparisonSessionIdsProvider.notifier).state = result.toList();
+          
+          // If comparison mode is active, switch to first selected session for main view
+          if (result.isNotEmpty) {
+            ref.read(_selectedSessionIdProvider.notifier).state = result.first;
+          }
+        }
+      },
+      loading: () async {},
+      error: (error, _) async {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error loading sessions: $error')),
+          );
+        }
+      },
+    );
+  }
+
   Future<ui.Image?> _captureChartImage(int chartIndex) async {
     final key = _chartKeys[chartIndex];
     if (key == null || key.currentContext == null) return null;
@@ -430,9 +518,27 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       }
     });
     
+    // Check if comparison mode is active
+    final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
+    
     final readingIds = sessionsAsync.when(
       data: (sessions) {
-        // If no session selected, use first session if available
+        // If comparison mode is active, use comparison sessions
+        if (comparisonIds.isNotEmpty) {
+          final allReadingIds = <int>[];
+          for (final sessionId in comparisonIds) {
+            final session = sessions.firstWhere(
+              (s) => s.id == sessionId,
+              orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+            );
+            if (session.id != -1) {
+              allReadingIds.addAll(session.readingIds);
+            }
+          }
+          return allReadingIds.isEmpty ? null : allReadingIds;
+        }
+        
+        // Otherwise, use selected session or first session
         final effectiveSessionId = selectedSessionId ?? (sessions.isNotEmpty ? sessions.first.id : null);
         return _getSelectedReadingIds(sessions, effectiveSessionId);
       },
@@ -445,6 +551,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     final selectedSessionName = sessionsAsync.when(
       data: (sessions) {
         if (sessions.isEmpty) return 'No sessions';
+        
+        // If comparison mode is active, show comparison info
+        if (comparisonIds.isNotEmpty) {
+          if (comparisonIds.length == 1) {
+            return 'Session #${comparisonIds.first}';
+          } else {
+            return '${comparisonIds.length} Sessions';
+          }
+        }
+        
+        // Otherwise show selected session
         final effectiveSessionId = selectedSessionId ?? sessions.first.id;
         final session = sessions.firstWhere(
           (s) => s.id == effectiveSessionId,
@@ -493,6 +610,70 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           ],
         ),
         actions: [
+          // Date range filter button
+          IconButton(
+            icon: Stack(
+              children: [
+                const Icon(Icons.date_range),
+                if (ref.watch(_dateRangeProvider) != null)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            tooltip: 'Filter by date range',
+            onPressed: () => _showDateRangePicker(context, ref),
+          ),
+          // Session comparison button
+          Builder(
+            builder: (context) {
+              final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
+              return IconButton(
+                icon: Stack(
+                  children: [
+                    const Icon(Icons.compare_arrows),
+                    if (comparisonIds.isNotEmpty)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            '${comparisonIds.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                tooltip: 'Compare multiple sessions',
+                onPressed: () => _showSessionComparisonDialog(context, ref, sessionsAsync),
+              );
+            },
+          ),
+          // Session filter button
           PopupMenuButton<int?>(
             icon: const Icon(Icons.filter_list),
             tooltip: 'Filter by session',
@@ -538,28 +719,79 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       body: Column(
         children: [
           // Session indicator banner
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.filter_alt,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+          Builder(
+            builder: (context) {
+              final dateRange = ref.watch(_dateRangeProvider);
+              final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
+              final hasFilters = dateRange != null || comparisonIds.isNotEmpty;
+              
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.filter_alt,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Viewing: $selectedSessionName',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                        if (hasFilters)
+                          IconButton(
+                            icon: Icon(
+                              Icons.clear,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                            tooltip: 'Clear all filters',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () {
+                              ref.read(_dateRangeProvider.notifier).state = null;
+                              ref.read(_comparisonSessionIdsProvider.notifier).state = [];
+                            },
+                          ),
+                      ],
+                    ),
+                    if (dateRange != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Date: ${dateRange.start.toLocal().toString().split(' ')[0]} - ${dateRange.end.toLocal().toString().split(' ')[0]}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                    if (comparisonIds.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Comparing ${comparisonIds.length} session${comparisonIds.length > 1 ? 's' : ''}: ${comparisonIds.map((id) => '#$id').join(', ')}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'Viewing: $selectedSessionName',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
           // Charts content
           Expanded(
@@ -1194,6 +1426,95 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         Text(
           'Range: ${minValue.toStringAsFixed(2)} - ${maxValue.toStringAsFixed(2)} $unit',
           style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog for selecting multiple sessions for comparison
+class _SessionComparisonDialog extends StatefulWidget {
+  const _SessionComparisonDialog({
+    required this.sessions,
+    required this.selectedIds,
+  });
+
+  final List<ReadingSession> sessions;
+  final Set<int> selectedIds;
+
+  @override
+  State<_SessionComparisonDialog> createState() => _SessionComparisonDialogState();
+}
+
+class _SessionComparisonDialogState extends State<_SessionComparisonDialog> {
+  late Set<int> _selectedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set<int>.from(widget.selectedIds);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Compare Sessions'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Select multiple sessions to compare on the same chart',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.sessions.length,
+                itemBuilder: (context, index) {
+                  final session = widget.sessions[index];
+                  final isSelected = _selectedIds.contains(session.id);
+                  return CheckboxListTile(
+                    title: Text('Session #${session.id}'),
+                    subtitle: Text(
+                      '${session.readingIds.length} readings • ${session.createdAt.toLocal().toString().split('.')[0]}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    value: isSelected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedIds.add(session.id);
+                        } else {
+                          _selectedIds.remove(session.id);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop(<int>{});
+          },
+          child: const Text('Clear All'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.of(context).pop(_selectedIds);
+          },
+          child: const Text('Apply'),
         ),
       ],
     );
