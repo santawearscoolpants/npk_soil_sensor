@@ -1,4 +1,4 @@
-# CSIR Soil Sensor App
+# CSIR-INSTI Soil Atlas
 
 Flutter app for farmers to read NPK soil data from an ESP32-WROOM-DA over Bluetooth Low Energy (BLE), store readings locally in sessions, associate them with crop parameters and images, and export CSV/PDF reports for sharing.
 
@@ -9,7 +9,7 @@ Flutter app for farmers to read NPK soil data from an ESP32-WROOM-DA over Blueto
 - **Session Management**: Group readings into logical sessions for better organization
 - **Crop Parameters**: Define and manage crop parameter sets with image uploads
 - **History View**: Browse reading sessions with detailed summaries
-- **Interactive Charts**: Visualize sensor data trends with interactive line charts, filterable by session
+- **Interactive Charts**: Visualize sensor data trends with interactive line charts, filterable by session, with multi-session comparison, threshold guides, and exportable PDFs
 - **Data Export**: Export sensor data as CSV or PDF reports, including chart exports
 - **Offline-First**: All data stored locally using SQLite (Drift)
 
@@ -171,6 +171,8 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
    - Use tabs to switch between: All, Moisture, EC, Temperature, pH, Nitrogen, Phosphorus, Potassium, Salinity
    - Your selected tab persists when navigating away and returning
    - Interactive charts show trends over time with touch tooltips
+   - Multi-session comparison mode overlays multiple sessions with color-coded legend
+   - Threshold guides for each sensor (tomato defaults) shown as dashed lines plus ideal-range callouts
    - Charts only display data from saved sessions (no live updates)
 
 ### Data Export
