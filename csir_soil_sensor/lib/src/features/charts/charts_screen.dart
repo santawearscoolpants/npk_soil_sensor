@@ -27,11 +27,37 @@ final _selectedSessionIdProvider = StateProvider<int?>((ref) => null);
 // Provider to persist the selected chart tab index across tab navigation
 final _selectedChartTabIndexProvider = StateProvider<int>((ref) => 0);
 
-// Provider for date range filter
-final _dateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
-
 // Provider for multiple session comparison
 final _comparisonSessionIdsProvider = StateProvider<List<int>>((ref) => []);
+
+// Provider for comparison readings - returns readings grouped by session
+final _comparisonReadingsProvider = FutureProvider.autoDispose<Map<int, List<SensorReading>>>((ref) async {
+  final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
+  if (comparisonIds.isEmpty) return {};
+  
+  final sessions = await ref.watch(_sessionsProvider.future);
+  final sensorRepo = ref.read(sensorRepoProvider);
+  final sessionReadings = <int, List<SensorReading>>{};
+  
+  for (final sessionId in comparisonIds) {
+    final session = sessions.firstWhere(
+      (s) => s.id == sessionId,
+      orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+    );
+    if (session.id != -1 && session.readingIds.isNotEmpty) {
+      // Limit readings per session to prevent performance issues
+      final limitedIds = session.readingIds.length > 5000 
+          ? session.readingIds.take(5000).toList()
+          : session.readingIds;
+      final readings = await sensorRepo.getReadingsByIds(limitedIds);
+      if (readings.isNotEmpty) {
+        sessionReadings[session.id] = readings;
+      }
+    }
+  }
+  
+  return sessionReadings;
+});
 
 // Export the provider so it can be invalidated from other screens
 final readingsProvider = FutureProvider.family
@@ -169,19 +195,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     return sampled;
   }
 
-  /// Filter readings by date range
-  List<SensorReading> _filterByDateRange(
-    List<SensorReading> readings,
-    DateTimeRange? dateRange,
-  ) {
-    if (dateRange == null) return readings;
-    
-    return readings.where((reading) {
-      final readingDate = reading.timestamp;
-      return readingDate.isAfter(dateRange.start.subtract(const Duration(seconds: 1))) &&
-             readingDate.isBefore(dateRange.end.add(const Duration(seconds: 1)));
-    }).toList();
-  }
 
   /// Get readings for multiple sessions for comparison
   Future<List<SensorReading>> _getComparisonReadings(
@@ -207,44 +220,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     return await sensorRepo.getReadingsByIds(allReadingIds);
   }
 
-  /// Show date range picker dialog
-  Future<void> _showDateRangePicker(BuildContext context, WidgetRef ref) async {
-    final currentRange = ref.read(_dateRangeProvider);
-    final initialRange = currentRange ?? DateTimeRange(
-      start: DateTime.now().subtract(const Duration(days: 7)),
-      end: DateTime.now(),
-    );
-
-    final pickedRange = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDateRange: initialRange,
-      helpText: 'Select date range for charts',
-      cancelText: 'Clear',
-      confirmText: 'Apply',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).colorScheme.primary,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (pickedRange != null) {
-      ref.read(_dateRangeProvider.notifier).state = pickedRange;
-    } else if (pickedRange == null && currentRange != null) {
-      // User tapped "Clear" - remove filter
-      ref.read(_dateRangeProvider.notifier).state = null;
-    }
-  }
 
   /// Show session comparison dialog
   Future<void> _showSessionComparisonDialog(
@@ -523,19 +498,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     
     final readingIds = sessionsAsync.when(
       data: (sessions) {
-        // If comparison mode is active, use comparison sessions
+        // If comparison mode is active, return null to use comparison provider
         if (comparisonIds.isNotEmpty) {
-          final allReadingIds = <int>[];
-          for (final sessionId in comparisonIds) {
-            final session = sessions.firstWhere(
-              (s) => s.id == sessionId,
-              orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
-            );
-            if (session.id != -1) {
-              allReadingIds.addAll(session.readingIds);
-            }
-          }
-          return allReadingIds.isEmpty ? null : allReadingIds;
+          return null; // Will use _comparisonReadingsProvider instead
         }
         
         // Otherwise, use selected session or first session
@@ -545,7 +510,19 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       loading: () => null,
       error: (_, __) => null,
     );
-    final readingsAsync = ref.watch(_readingsProvider(readingIds));
+    
+    // Use comparison provider if comparison mode is active, otherwise use regular provider
+    final isComparisonMode = comparisonIds.isNotEmpty;
+    
+    // Get comparison data separately for multi-line rendering
+    final comparisonDataAsync = isComparisonMode
+        ? ref.watch(_comparisonReadingsProvider)
+        : null;
+    
+    // For non-comparison mode, use regular readings provider
+    final readingsAsync = isComparisonMode
+        ? null
+        : ref.watch(_readingsProvider(readingIds));
     
     // Get session name for display
     final selectedSessionName = sessionsAsync.when(
@@ -610,29 +587,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           ],
         ),
         actions: [
-          // Date range filter button
-          IconButton(
-            icon: Stack(
-              children: [
-                const Icon(Icons.date_range),
-                if (ref.watch(_dateRangeProvider) != null)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            tooltip: 'Filter by date range',
-            onPressed: () => _showDateRangePicker(context, ref),
-          ),
           // Session comparison button
           Builder(
             builder: (context) {
@@ -721,9 +675,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           // Session indicator banner
           Builder(
             builder: (context) {
-              final dateRange = ref.watch(_dateRangeProvider);
               final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
-              final hasFilters = dateRange != null || comparisonIds.isNotEmpty;
+              final hasComparison = comparisonIds.isNotEmpty;
               
               return Container(
                 width: double.infinity,
@@ -751,33 +704,22 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                             ),
                           ),
                         ),
-                        if (hasFilters)
+                        if (hasComparison)
                           IconButton(
                             icon: Icon(
                               Icons.clear,
                               size: 18,
                               color: Theme.of(context).colorScheme.onPrimaryContainer,
                             ),
-                            tooltip: 'Clear all filters',
+                            tooltip: 'Clear comparison',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: () {
-                              ref.read(_dateRangeProvider.notifier).state = null;
                               ref.read(_comparisonSessionIdsProvider.notifier).state = [];
                             },
                           ),
                       ],
                     ),
-                    if (dateRange != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Date: ${dateRange.start.toLocal().toString().split(' ')[0]} - ${dateRange.end.toLocal().toString().split(' ')[0]}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
                     if (comparisonIds.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -795,7 +737,180 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           ),
           // Charts content
           Expanded(
-            child: readingsAsync.when(
+            child: isComparisonMode && comparisonDataAsync != null
+                ? comparisonDataAsync.when(
+                    data: (sessionReadings) {
+                      if (sessionReadings.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.show_chart,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No readings available to display',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: Colors.grey[600],
+                                    ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      try {
+                        return TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildAllChartsViewComparison(sessionReadings),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              1,
+                              'Moisture',
+                              '%',
+                              (r) => r.moisture,
+                              Colors.blue,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              2,
+                              'EC',
+                              'mS/cm',
+                              (r) => r.ec,
+                              Colors.green,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              3,
+                              'Temperature',
+                              '°C',
+                              (r) => r.temperature,
+                              Colors.orange,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              4,
+                              'pH',
+                              '',
+                              (r) => r.ph,
+                              Colors.purple,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              5,
+                              'Nitrogen',
+                              'ppm',
+                              (r) => r.nitrogen.toDouble(),
+                              Colors.red,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              6,
+                              'Phosphorus',
+                              'ppm',
+                              (r) => r.phosphorus.toDouble(),
+                              Colors.teal,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              7,
+                              'Potassium',
+                              'ppm',
+                              (r) => r.potassium.toDouble(),
+                              Colors.amber,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              8,
+                              'Salinity',
+                              'g/L',
+                              (r) => r.salinity,
+                              Colors.cyan,
+                            ),
+                          ],
+                        );
+                      } catch (e) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: Colors.red[300],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Error displaying charts',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: Colors.red[700],
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                e.toString(),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey[600],
+                                    ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                    loading: () => Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Loading comparison data...',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    error: (error, stack) => Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red[300],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error loading comparison data',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Colors.red[700],
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                            child: Text(
+                              error.toString(),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : readingsAsync != null
+                    ? readingsAsync.when(
               data: (readings) {
                 if (readings.isEmpty) {
                   return Center(
@@ -832,46 +947,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   final sortedReadings = List<SensorReading>.from(readings)
                     ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-                  // Apply date range filter if set
-                  final dateRange = ref.watch(_dateRangeProvider);
-                  final filteredReadings = _filterByDateRange(sortedReadings, dateRange);
-
-                  if (filteredReadings.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.date_range,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No readings in selected date range',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () {
-                              ref.read(_dateRangeProvider.notifier).state = null;
-                            },
-                            child: const Text('Clear date filter'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
                   // Sample data for performance if needed
-                  final displayReadings = _sampleDataIfNeeded(filteredReadings);
+                  final displayReadings = _sampleDataIfNeeded(sortedReadings);
 
                     return TabBarView(
                     controller: _tabController,
                     children: [
-                      _buildAllChartsView(displayReadings, originalCount: filteredReadings.length),
+                      _buildAllChartsView(displayReadings, originalCount: sortedReadings.length),
                       _buildChart(
                         displayReadings,
                         1,
@@ -879,7 +961,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         '%',
                         (r) => r.moisture,
                         Colors.blue,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -888,7 +970,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'mS/cm',
                         (r) => r.ec,
                         Colors.green,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -897,7 +979,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         '°C',
                         (r) => r.temperature,
                         Colors.orange,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -906,7 +988,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         '',
                         (r) => r.ph,
                         Colors.purple,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -915,7 +997,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'ppm',
                         (r) => r.nitrogen.toDouble(),
                         Colors.red,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -924,7 +1006,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'ppm',
                         (r) => r.phosphorus.toDouble(),
                         Colors.teal,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -933,7 +1015,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'ppm',
                         (r) => r.potassium.toDouble(),
                         Colors.amber,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                       _buildChart(
                         displayReadings,
@@ -942,7 +1024,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'g/L',
                         (r) => r.salinity,
                         Colors.cyan,
-                        originalCount: filteredReadings.length,
+                        originalCount: sortedReadings.length,
                       ),
                     ],
                   );
@@ -1021,7 +1103,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   ],
                 ),
               ),
-            ),
+            )
+                    : const Center(child: Text('No data available')),
           ),
         ],
       ),
@@ -1428,6 +1511,500 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
+    );
+  }
+
+  /// Build chart with multiple lines for comparison mode
+  Widget _buildComparisonChart(
+    Map<int, List<SensorReading>> sessionReadings,
+    int chartIndex,
+    String title,
+    String unit,
+    double Function(SensorReading) valueExtractor,
+    Color baseColor, {
+    GlobalKey? customKey,
+    bool isScrollable = false,
+  }) {
+    // Define colors for different sessions
+    final sessionColors = [
+      baseColor,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.lime,
+      Colors.deepOrange,
+      Colors.cyanAccent,
+      Colors.purpleAccent,
+    ];
+
+    // Prepare line data for each session
+    final lineBarsData = <LineChartBarData>[];
+    final sessionIds = sessionReadings.keys.toList()..sort();
+    
+    if (sessionIds.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.show_chart,
+              size: 48,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No data available',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Calculate global min/max across all sessions
+    double globalMin = double.infinity;
+    double globalMax = double.negativeInfinity;
+    final allReadings = sessionReadings.values.expand((r) => r).toList();
+    
+    for (final reading in allReadings) {
+      final value = valueExtractor(reading);
+      if (value < globalMin) globalMin = value;
+      if (value > globalMax) globalMax = value;
+    }
+
+    final range = globalMax - globalMin;
+    final padding = range > 0 ? range * 0.1 : (globalMin.abs() * 0.1 + 1);
+    final yMin = globalMin - padding;
+    final yMax = globalMax + padding;
+
+    // Build a line for each session
+    for (int i = 0; i < sessionIds.length; i++) {
+      final sessionId = sessionIds[i];
+      final readings = sessionReadings[sessionId]!;
+      
+      // Sort by timestamp
+      final sortedReadings = List<SensorReading>.from(readings)
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      
+      // Sample if needed
+      final displayReadings = _sampleDataIfNeeded(sortedReadings);
+      
+      // Create spots for this session
+      final spots = displayReadings.asMap().entries.map((entry) {
+        final index = entry.key.toDouble();
+        final value = valueExtractor(entry.value);
+        return FlSpot(index, value);
+      }).toList();
+
+      final color = sessionColors[i % sessionColors.length];
+      
+      lineBarsData.add(
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          color: color,
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: false, // Don't show area fill for comparison
+          ),
+        ),
+      );
+    }
+
+    // Prepare X axis labels (use first session's readings for labels)
+    final firstSessionReadings = sessionReadings[sessionIds.first]!;
+    final sortedFirst = List<SensorReading>.from(firstSessionReadings)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final sampledFirst = _sampleDataIfNeeded(sortedFirst);
+    final xLabels = sampledFirst.map((r) {
+      final time = r.timestamp;
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    }).toList();
+
+    // Build the chart widget - use SizedBox for scrollable, Expanded for non-scrollable
+    final chartWidget = isScrollable
+        ? SizedBox(
+            height: 300,
+            child: LineChart(
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: (yMax - yMin) / 5,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: Colors.grey.withOpacity(0.2),
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 30,
+                      interval: (xLabels.length / 5).ceil().toDouble(),
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index >= 0 && index < xLabels.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              xLabels[index],
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          );
+                        }
+                        return const Text('');
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 50,
+                      interval: (yMax - yMin) / 5,
+                      getTitlesWidget: (value, meta) {
+                        return Text(
+                          value.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                ),
+                minX: 0,
+                maxX: (xLabels.length - 1).toDouble(),
+                minY: yMin,
+                maxY: yMax,
+                lineBarsData: lineBarsData,
+                lineTouchData: LineTouchData(
+                  enabled: true,
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final barIndex = spot.barIndex;
+                        final xIndex = spot.x.toInt();
+                        if (barIndex < sessionIds.length && xIndex >= 0) {
+                          final sessionId = sessionIds[barIndex];
+                          final readings = sessionReadings[sessionId]!;
+                          final sorted = List<SensorReading>.from(readings)
+                            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                          final sampled = _sampleDataIfNeeded(sorted);
+                          if (xIndex < sampled.length) {
+                            final reading = sampled[xIndex];
+                            final color = sessionColors[barIndex % sessionColors.length];
+                            return LineTooltipItem(
+                              'Session #$sessionId\n${valueExtractor(reading).toStringAsFixed(2)} $unit\n${reading.timestamp.toString().split('.')[0]}',
+                              TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          }
+                        }
+                        return null;
+                      }).toList();
+                    },
+                  ),
+                ),
+                clipData: const FlClipData.all(),
+              ),
+            ),
+          )
+        : Expanded(
+            child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: (yMax - yMin) / 5,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.withOpacity(0.2),
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 30,
+                        interval: (xLabels.length / 5).ceil().toDouble(),
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index >= 0 && index < xLabels.length) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                xLabels[index],
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 50,
+                        interval: (yMax - yMin) / 5,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                  ),
+                  minX: 0,
+                  maxX: (xLabels.length - 1).toDouble(),
+                  minY: yMin,
+                  maxY: yMax,
+                  lineBarsData: lineBarsData,
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final barIndex = spot.barIndex;
+                          final xIndex = spot.x.toInt();
+                          if (barIndex < sessionIds.length && xIndex >= 0) {
+                            final sessionId = sessionIds[barIndex];
+                            final readings = sessionReadings[sessionId]!;
+                            final sorted = List<SensorReading>.from(readings)
+                              ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                            final sampled = _sampleDataIfNeeded(sorted);
+                            if (xIndex < sampled.length) {
+                              final reading = sampled[xIndex];
+                              final color = sessionColors[barIndex % sessionColors.length];
+                              return LineTooltipItem(
+                                'Session #$sessionId\n${valueExtractor(reading).toStringAsFixed(2)} $unit\n${reading.timestamp.toString().split('.')[0]}',
+                                TextStyle(
+                                  color: color,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              );
+                            }
+                          }
+                          return null;
+                        }).toList();
+                      },
+                    ),
+                  ),
+                  clipData: const FlClipData.all(),
+                ),
+              ),
+            );
+
+    return RepaintBoundary(
+      key: customKey ?? _chartKeys[chartIndex],
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: isScrollable ? MainAxisSize.min : MainAxisSize.max,
+          children: [
+            Text(
+              '$title ($unit)',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            // Legend
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: sessionIds.asMap().entries.map((entry) {
+                final index = entry.key;
+                final sessionId = entry.value;
+                final color = sessionColors[index % sessionColors.length];
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 3,
+                      color: color,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Session #$sessionId',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                          ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+            chartWidget,
+            const SizedBox(height: 8),
+            Text(
+              'Range: ${globalMin.toStringAsFixed(2)} - ${globalMax.toStringAsFixed(2)} $unit',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllChartsViewComparison(Map<int, List<SensorReading>> sessionReadings) {
+    // Create unique keys for each chart in the "All" view to avoid duplicate key errors
+    final allViewKeys = <int, GlobalKey>{};
+    for (int i = 0; i < 8; i++) {
+      allViewKeys[i] = GlobalKey();
+    }
+    
+    return RepaintBoundary(
+      key: _chartKeys[0],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'All Sensors Overview (Comparison)',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Moisture',
+              '%',
+              (r) => r.moisture,
+              Colors.blue,
+              customKey: allViewKeys[0],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'EC',
+              'mS/cm',
+              (r) => r.ec,
+              Colors.green,
+              customKey: allViewKeys[1],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Temperature',
+              '°C',
+              (r) => r.temperature,
+              Colors.orange,
+              customKey: allViewKeys[2],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'pH',
+              '',
+              (r) => r.ph,
+              Colors.purple,
+              customKey: allViewKeys[3],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Nitrogen',
+              'ppm',
+              (r) => r.nitrogen.toDouble(),
+              Colors.red,
+              customKey: allViewKeys[4],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Phosphorus',
+              'ppm',
+              (r) => r.phosphorus.toDouble(),
+              Colors.teal,
+              customKey: allViewKeys[5],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Potassium',
+              'ppm',
+              (r) => r.potassium.toDouble(),
+              Colors.amber,
+              customKey: allViewKeys[6],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'Salinity',
+              'g/L',
+              (r) => r.salinity,
+              Colors.cyan,
+              customKey: allViewKeys[7],
+              isScrollable: true,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
