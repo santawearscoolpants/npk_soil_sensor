@@ -27,6 +27,12 @@ final _selectedSessionIdProvider = StateProvider<int?>((ref) => null);
 // Provider to persist the selected chart tab index across tab navigation
 final _selectedChartTabIndexProvider = StateProvider<int>((ref) => 0);
 
+// Provider for date range filter
+final _dateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+
+// Provider for multiple session comparison
+final _comparisonSessionIdsProvider = StateProvider<List<int>>((ref) => []);
+
 // Export the provider so it can be invalidated from other screens
 final readingsProvider = FutureProvider.family
     .autoDispose<List<SensorReading>, List<int>?>((ref, readingIds) async {
@@ -140,6 +146,67 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     return chartNames[chartIndex];
   }
 
+  /// Performance optimization: Sample data for large datasets
+  /// Returns sampled readings if dataset is too large, otherwise returns original
+  List<SensorReading> _sampleDataIfNeeded(List<SensorReading> readings, {int maxPoints = 500}) {
+    if (readings.length <= maxPoints) {
+      return readings;
+    }
+    
+    // Sample data evenly across the dataset
+    final step = (readings.length / maxPoints).ceil();
+    final sampled = <SensorReading>[];
+    
+    for (int i = 0; i < readings.length; i += step) {
+      sampled.add(readings[i]);
+    }
+    
+    // Always include the last reading
+    if (sampled.last != readings.last) {
+      sampled.add(readings.last);
+    }
+    
+    return sampled;
+  }
+
+  /// Filter readings by date range
+  List<SensorReading> _filterByDateRange(
+    List<SensorReading> readings,
+    DateTimeRange? dateRange,
+  ) {
+    if (dateRange == null) return readings;
+    
+    return readings.where((reading) {
+      final readingDate = reading.timestamp;
+      return readingDate.isAfter(dateRange.start.subtract(const Duration(seconds: 1))) &&
+             readingDate.isBefore(dateRange.end.add(const Duration(seconds: 1)));
+    }).toList();
+  }
+
+  /// Get readings for multiple sessions for comparison
+  Future<List<SensorReading>> _getComparisonReadings(
+    List<int> sessionIds,
+    List<ReadingSession> sessions,
+  ) async {
+    if (sessionIds.isEmpty) return [];
+    
+    final allReadingIds = <int>[];
+    for (final sessionId in sessionIds) {
+      final session = sessions.firstWhere(
+        (s) => s.id == sessionId,
+        orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+      );
+      if (session.id != -1) {
+        allReadingIds.addAll(session.readingIds);
+      }
+    }
+    
+    if (allReadingIds.isEmpty) return [];
+    
+    final sensorRepo = ref.read(sensorRepoProvider);
+    return await sensorRepo.getReadingsByIds(allReadingIds);
+  }
+
   Future<ui.Image?> _captureChartImage(int chartIndex) async {
     final key = _chartKeys[chartIndex];
     if (key == null || key.currentContext == null) return null;
@@ -161,159 +228,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     } catch (e) {
       print('Error capturing chart $chartIndex: $e');
       return null;
-    }
-  }
-
-  Future<void> _exportChart(int chartIndex, int? sessionId) async {
-    // Special handling for "All Sensors" tab - export all individual charts
-    if (chartIndex == 0) {
-      await _exportAllSensorsChart(sessionId);
-      return;
-    }
-
-    final image = await _captureChartImage(chartIndex);
-    if (image == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chart not ready for export')),
-        );
-      }
-      return;
-    }
-
-    try {
-      final ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      
-      if (byteData == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to capture chart')),
-          );
-        }
-        return;
-      }
-
-      // Convert image bytes to PDF image
-      final imageBytes = byteData.buffer.asUint8List();
-      
-      // Verify image bytes are valid
-      if (imageBytes.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image data is empty')),
-          );
-        }
-        return;
-      }
-      
-      // Create PDF image
-      final pdfImage = pw.MemoryImage(imageBytes);
-
-      // Get image dimensions for proper sizing
-      final imageWidth = image.width.toDouble();
-      final imageHeight = image.height.toDouble();
-      final aspectRatio = imageWidth / imageHeight;
-      
-      // Calculate available dimensions (A4 minus margins)
-      const pageWidth = 595.28;
-      const pageHeight = 841.89;
-      const margin = 40.0;
-      final availableWidth = pageWidth - (margin * 2);
-      final availableHeight = pageHeight - (margin * 2) - 80;
-      
-      // Calculate image size to fit within available space
-      double imageWidthPdf = availableWidth;
-      double imageHeightPdf = imageWidthPdf / aspectRatio;
-      
-      if (imageHeightPdf > availableHeight) {
-        imageHeightPdf = availableHeight;
-        imageWidthPdf = imageHeightPdf * aspectRatio;
-      }
-
-      // Create PDF document
-      final pdf = pw.Document();
-      final chartTitle = _getChartTitle(chartIndex);
-      final sessionText = sessionId != null 
-          ? 'Session #$sessionId' 
-          : 'All Readings';
-      final exportDate = DateTime.now();
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(margin),
-          build: (pw.Context context) {
-            return pw.Stack(
-              children: [
-                // Title and metadata at top
-                pw.Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    mainAxisSize: pw.MainAxisSize.min,
-                    children: [
-                      pw.Text(
-                        chartTitle,
-                        style: pw.TextStyle(
-                          fontSize: 24,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Text(
-                        '$sessionText • ${exportDate.toLocal().toString().split('.')[0]}',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          color: PdfColors.grey700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Chart image centered below the header
-                pw.Positioned(
-                  top: 80,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: pw.Center(
-                    child: pw.Image(
-                      pdfImage,
-                      width: imageWidthPdf,
-                      height: imageHeightPdf,
-                      fit: pw.BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-
-      // Save PDF
-      final dir = await getTemporaryDirectory();
-      final fileName = '${_getExportFileName(chartIndex, sessionId)}.pdf';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(await pdf.save());
-
-      final exportName = _getExportFileName(chartIndex, sessionId);
-      await Share.shareXFiles([XFile(file.path)]);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Chart exported as PDF: $exportName')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export error: $e')),
-        );
-      }
     }
   }
 
@@ -652,89 +566,228 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             child: readingsAsync.when(
               data: (readings) {
                 if (readings.isEmpty) {
-                  return const Center(
-                    child: Text('No readings available to display'),
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.show_chart,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No readings available to display',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Connect to a device and collect readings to see charts',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[500],
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   );
                 }
 
-                // Sort readings by timestamp
-                final sortedReadings = List<SensorReading>.from(readings)
-                  ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                try {
+                  // Sort readings by timestamp
+                  final sortedReadings = List<SensorReading>.from(readings)
+                    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-                return TabBarView(
-                  controller: _tabController,
+                  // Apply date range filter if set
+                  final dateRange = ref.watch(_dateRangeProvider);
+                  final filteredReadings = _filterByDateRange(sortedReadings, dateRange);
+
+                  if (filteredReadings.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.date_range,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No readings in selected date range',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              ref.read(_dateRangeProvider.notifier).state = null;
+                            },
+                            child: const Text('Clear date filter'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Sample data for performance if needed
+                  final displayReadings = _sampleDataIfNeeded(filteredReadings);
+
+                    return TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildAllChartsView(displayReadings, originalCount: filteredReadings.length),
+                      _buildChart(
+                        displayReadings,
+                        1,
+                        'Moisture',
+                        '%',
+                        (r) => r.moisture,
+                        Colors.blue,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        2,
+                        'EC',
+                        'mS/cm',
+                        (r) => r.ec,
+                        Colors.green,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        3,
+                        'Temperature',
+                        '°C',
+                        (r) => r.temperature,
+                        Colors.orange,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        4,
+                        'pH',
+                        '',
+                        (r) => r.ph,
+                        Colors.purple,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        5,
+                        'Nitrogen',
+                        'ppm',
+                        (r) => r.nitrogen.toDouble(),
+                        Colors.red,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        6,
+                        'Phosphorus',
+                        'ppm',
+                        (r) => r.phosphorus.toDouble(),
+                        Colors.teal,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        7,
+                        'Potassium',
+                        'ppm',
+                        (r) => r.potassium.toDouble(),
+                        Colors.amber,
+                        originalCount: filteredReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        8,
+                        'Salinity',
+                        'g/L',
+                        (r) => r.salinity,
+                        Colors.cyan,
+                        originalCount: filteredReadings.length,
+                      ),
+                    ],
+                  );
+                } catch (e) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.red[300],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error displaying charts',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: Colors.red[700],
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          e.toString(),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+              loading: () => Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildAllChartsView(sortedReadings),
-                    _buildChart(
-                      sortedReadings,
-                      1,
-                      'Moisture',
-                      '%',
-                      (r) => r.moisture,
-                      Colors.blue,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      2,
-                      'EC',
-                      'mS/cm',
-                      (r) => r.ec,
-                      Colors.green,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      3,
-                      'Temperature',
-                      '°C',
-                      (r) => r.temperature,
-                      Colors.orange,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      4,
-                      'pH',
-                      '',
-                      (r) => r.ph,
-                      Colors.purple,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      5,
-                      'Nitrogen',
-                      'ppm',
-                      (r) => r.nitrogen.toDouble(),
-                      Colors.red,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      6,
-                      'Phosphorus',
-                      'ppm',
-                      (r) => r.phosphorus.toDouble(),
-                      Colors.teal,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      7,
-                      'Potassium',
-                      'ppm',
-                      (r) => r.potassium.toDouble(),
-                      Colors.amber,
-                    ),
-                    _buildChart(
-                      sortedReadings,
-                      8,
-                      'Salinity',
-                      'g/L',
-                      (r) => r.salinity,
-                      Colors.cyan,
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loading chart data...',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey[600],
+                          ),
                     ),
                   ],
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
+                ),
+              ),
               error: (error, stack) => Center(
-                child: Text('Error loading readings: $error'),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Colors.red[300],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error loading readings',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Colors.red[700],
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                      child: Text(
+                        error.toString(),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -749,10 +802,29 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     String title,
     String unit,
     double Function(SensorReading) valueExtractor,
-    Color color,
-  ) {
+    Color color, {
+    int originalCount = 0,
+  }) {
     if (readings.isEmpty) {
-      return const Center(child: Text('No data available'));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.show_chart,
+              size: 48,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No data available',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+          ],
+        ),
+      );
     }
 
     // Prepare chart data points
@@ -877,6 +949,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                     ),
                   ],
                   lineTouchData: LineTouchData(
+                    enabled: true,
                     touchTooltipData: LineTouchTooltipData(
                       getTooltipItems: (List<LineBarSpot> touchedSpots) {
                         return touchedSpots.map((spot) {
@@ -896,13 +969,37 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                       },
                     ),
                   ),
+                  // Enable zoom and pan
+                  clipData: const FlClipData.all(),
+                  extraLinesData: ExtraLinesData(
+                    verticalLines: [],
+                    horizontalLines: [],
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Range: ${minValue.toStringAsFixed(2)} - ${maxValue.toStringAsFixed(2)} $unit | ${readings.length} readings',
-              style: Theme.of(context).textTheme.bodySmall,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Range: ${minValue.toStringAsFixed(2)} - ${maxValue.toStringAsFixed(2)} $unit',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (originalCount > 0 && originalCount != readings.length)
+                  Text(
+                    '${readings.length}/${originalCount} points',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue,
+                          fontStyle: FontStyle.italic,
+                        ),
+                  )
+                else
+                  Text(
+                    '${readings.length} readings',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
             ),
           ],
         ),
@@ -910,7 +1007,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     );
   }
 
-  Widget _buildAllChartsView(List<SensorReading> readings) {
+  Widget _buildAllChartsView(List<SensorReading> readings, {int originalCount = 0}) {
     return RepaintBoundary(
       key: _chartKeys[0],
       child: SingleChildScrollView(
