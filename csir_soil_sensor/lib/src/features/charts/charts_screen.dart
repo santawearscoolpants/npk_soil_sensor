@@ -14,6 +14,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
+import '../../core/thresholds.dart';
 
 final _sessionsProvider =
     FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
@@ -170,6 +171,103 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       'Salinity',
     ];
     return chartNames[chartIndex];
+  }
+
+  /// Get threshold values for a specific sensor type
+  ({double low, double high, String info}) _getThresholds(int chartIndex) {
+    switch (chartIndex) {
+      case 1: // Moisture
+        return (
+          low: TomatoThresholds.moistureLow,
+          high: TomatoThresholds.moistureHigh,
+          info: 'Ideal: ${TomatoThresholds.moistureLow}-${TomatoThresholds.moistureHigh}%'
+        );
+      case 2: // EC
+        return (
+          low: TomatoThresholds.ecLow,
+          high: TomatoThresholds.ecHigh,
+          info: 'Ideal: ${TomatoThresholds.ecLow}-${TomatoThresholds.ecHigh} mS/cm'
+        );
+      case 3: // Temperature
+        return (
+          low: TomatoThresholds.temperatureLow,
+          high: TomatoThresholds.temperatureHigh,
+          info: 'Ideal: ${TomatoThresholds.temperatureLow}-${TomatoThresholds.temperatureHigh}°C'
+        );
+      case 4: // pH
+        return (
+          low: TomatoThresholds.phLow,
+          high: TomatoThresholds.phHigh,
+          info: 'Ideal: ${TomatoThresholds.phLow}-${TomatoThresholds.phHigh}'
+        );
+      case 5: // Nitrogen
+        return (
+          low: TomatoThresholds.nitrogenLow,
+          high: TomatoThresholds.nitrogenHigh,
+          info: 'Ideal: ${TomatoThresholds.nitrogenLow}-${TomatoThresholds.nitrogenHigh} ppm'
+        );
+      case 6: // Phosphorus
+        return (
+          low: TomatoThresholds.phosphorusLow,
+          high: TomatoThresholds.phosphorusHigh,
+          info: 'Ideal: ${TomatoThresholds.phosphorusLow}-${TomatoThresholds.phosphorusHigh} ppm'
+        );
+      case 7: // Potassium
+        return (
+          low: TomatoThresholds.potassiumLow,
+          high: TomatoThresholds.potassiumHigh,
+          info: 'Ideal: ${TomatoThresholds.potassiumLow}-${TomatoThresholds.potassiumHigh} ppm'
+        );
+      case 8: // Salinity
+        return (
+          low: TomatoThresholds.salinityLow,
+          high: TomatoThresholds.salinityHigh,
+          info: 'Ideal: ${TomatoThresholds.salinityLow}-${TomatoThresholds.salinityHigh} g/L'
+        );
+      default:
+        return (low: 0, high: 0, info: '');
+    }
+  }
+
+  /// Build horizontal reference lines for optimal thresholds
+  List<HorizontalLine> _buildThresholdLines(int chartIndex, double yMin, double yMax) {
+    if (chartIndex == 0) return []; // No thresholds for "All" view
+    
+    final thresholds = _getThresholds(chartIndex);
+    if (thresholds.low == 0 && thresholds.high == 0) return [];
+    
+    // Only show lines if they're within the visible range
+    final lines = <HorizontalLine>[];
+    
+    if (thresholds.low >= yMin && thresholds.low <= yMax) {
+      lines.add(
+        HorizontalLine(
+          y: thresholds.low,
+          color: Colors.green.withOpacity(0.6),
+          strokeWidth: 2,
+          dashArray: [5, 5],
+          label: HorizontalLineLabel(
+            show: false, // Threshold info shown in footer instead
+          ),
+        ),
+      );
+    }
+    
+    if (thresholds.high >= yMin && thresholds.high <= yMax) {
+      lines.add(
+        HorizontalLine(
+          y: thresholds.high,
+          color: Colors.green.withOpacity(0.6),
+          strokeWidth: 2,
+          dashArray: [5, 5],
+          label: HorizontalLineLabel(
+            show: false, // Threshold info shown in footer instead
+          ),
+        ),
+      );
+    }
+    
+    return lines;
   }
 
   /// Performance optimization: Sample data for large datasets
@@ -1288,7 +1386,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   clipData: const FlClipData.all(),
                   extraLinesData: ExtraLinesData(
                     verticalLines: [],
-                    horizontalLines: [],
+                    horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
                   ),
                 ),
               ),
@@ -1297,9 +1395,24 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Range: ${minValue.toStringAsFixed(2)} - ${maxValue.toStringAsFixed(2)} $unit',
-                  style: Theme.of(context).textTheme.bodySmall,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Range: ${minValue.toStringAsFixed(2)} - ${maxValue.toStringAsFixed(2)} $unit',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (chartIndex > 0) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _getThresholds(chartIndex).info,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.green[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ],
                 ),
                 if (originalCount > 0 && originalCount != readings.length)
                   Text(
@@ -1730,6 +1843,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   ),
                 ),
                 clipData: const FlClipData.all(),
+                extraLinesData: ExtraLinesData(
+                  verticalLines: [],
+                  horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
+                ),
               ),
             ),
           )
@@ -1835,6 +1952,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                     ),
                   ),
                   clipData: const FlClipData.all(),
+                  extraLinesData: ExtraLinesData(
+                    verticalLines: [],
+                    horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
+                  ),
                 ),
               ),
             );
@@ -1854,39 +1975,81 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   ),
             ),
             const SizedBox(height: 8),
-            // Legend
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              children: sessionIds.asMap().entries.map((entry) {
-                final index = entry.key;
-                final sessionId = entry.value;
-                final color = sessionColors[index % sessionColors.length];
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 3,
-                      color: color,
+            // Legend with improved styling
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                children: sessionIds.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final sessionId = entry.value;
+                  final color = sessionColors[index % sessionColors.length];
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: color.withOpacity(0.3),
+                        width: 1,
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Session #$sessionId',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 20,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(2),
                           ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Session #$sessionId',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: color,
+                              ),
+                        ),
+                      ],
                     ),
-                  ],
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ),
             ),
             const SizedBox(height: 8),
             chartWidget,
             const SizedBox(height: 8),
-            Text(
-              'Range: ${globalMin.toStringAsFixed(2)} - ${globalMax.toStringAsFixed(2)} $unit',
-              style: Theme.of(context).textTheme.bodySmall,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Range: ${globalMin.toStringAsFixed(2)} - ${globalMax.toStringAsFixed(2)} $unit',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (chartIndex > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    _getThresholds(chartIndex).info,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
