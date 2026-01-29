@@ -31,6 +31,32 @@ int16_t toSigned(uint16_t v) {
 void preTransmission()  { digitalWrite(RE_DE_PIN, HIGH); }
 void postTransmission() { digitalWrite(RE_DE_PIN, LOW);  }
 
+// ============ UNIT CONVERSIONS (EC, N, K) =======================
+// EC: 1 dS/m = 1000 uS/cm
+static inline float ec_uScm_to_dSm(float ec_uScm) {
+  return ec_uScm / 1000.0f;
+}
+
+// Total N: 1% = 10,000 mg/kg (unit conversion only)
+// NOTE: Lab TN% is "total N". Sensor N mg/kg is usually "available N estimate".
+// Converting units does NOT make them chemically identical.
+static inline float n_mgkg_to_percent(float n_mgkg) {
+  return n_mgkg / 10000.0f;
+}
+static inline float tn_percent_to_mgkg(float tn_percent) {
+  return tn_percent * 10000.0f;
+}
+
+// Potassium: mg/kg <-> cmol(+)/kg
+// cmol(+)/kg = (mg/kg) / (atomic_weight * 10) for K+
+// atomic weight K = 39.10, charge = 1
+static inline float k_mgkg_to_cmolkg(float k_mgkg) {
+  return k_mgkg / (39.10f * 10.0f);
+}
+static inline float k_cmolkg_to_mgkg(float k_cmolkg) {
+  return k_cmolkg * (39.10f * 10.0f);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -39,7 +65,7 @@ void setup() {
   // --- TFT setup (unchanged from your working code) ---
   SPI.begin();  // VSPI: SCK=18, MISO=19, MOSI=23
 
-  tft.initR(INITR_BLACKTAB);  // same TAB you used before
+  tft.initR(INITR_BLACKTAB);
   tft.setRotation(1);
 
   // Quick color test on boot
@@ -58,7 +84,7 @@ void setup() {
 
   // --- RS485 / Modbus setup ---
   pinMode(RE_DE_PIN, OUTPUT);
-  digitalWrite(RE_DE_PIN, LOW);    // receive mode by default
+  digitalWrite(RE_DE_PIN, LOW);
 
   RS485Serial.begin(BAUD_RATE, SERIAL_8N1, RS485_RX, RS485_TX);
 
@@ -83,25 +109,48 @@ void loop() {
       raw[i] = node.getResponseBuffer(i);
     }
 
-    float moisture = raw[0] / 10.0;
-    float temp     = toSigned(raw[1]) / 10.0;
-    float ec       = raw[2];
-    float ph       = raw[3] / 10.0;
-    int   n        = raw[4];
-    int   p        = raw[5];
-    int   k        = raw[6];
-    int   sal      = raw[7];
-    int   tds      = raw[8];
+    float moisture = raw[0] / 10.0f;
+    float temp     = toSigned(raw[1]) / 10.0f;
+
+    // Sensor EC is typically in uS/cm (raw number)
+    float ec_uScm   = (float)raw[2];
+    float ec_dSm    = ec_uScm_to_dSm(ec_uScm);
+
+    float ph        = raw[3] / 10.0f;
+
+    // Sensor N, P, K usually in mg/kg (ppm)
+    float n_mgkg    = (float)raw[4];
+    float p_mgkg    = (float)raw[5];
+    float k_mgkg    = (float)raw[6];
+
+    // Optional unit-only conversion to percent
+    float n_percent_equiv = n_mgkg_to_percent(n_mgkg);
+
+    // Convert K mg/kg -> cmol(+)/kg to match lab report exchangeable K unit
+    float k_cmolkg  = k_mgkg_to_cmolkg(k_mgkg);
+
+    int   sal       = raw[7];
+    int   tds       = raw[8];
 
     // ---- Serial Output ----
     Serial.println("===== Soil Sensor Data =====");
     Serial.printf("Temperature : %.1f C\n", temp);
     Serial.printf("Moisture    : %.1f %%\n", moisture);
-    Serial.printf("EC          : %.0f\n", ec);
+
+    // EC in both units
+    Serial.printf("EC          : %.0f uS/cm  |  %.3f dS/m\n", ec_uScm, ec_dSm);
+
     Serial.printf("pH          : %.1f\n", ph);
-    Serial.printf("Nitrogen    : %d\n", n);
-    Serial.printf("Phosphorus  : %d\n", p);
-    Serial.printf("Potassium   : %d\n", k);
+
+    // N in mg/kg (sensor) + percent (unit-equivalent only)
+    Serial.printf("Nitrogen    : %.0f mg/kg  |  %.4f %% (unit-equiv)\n", n_mgkg, n_percent_equiv);
+
+    // K in mg/kg (sensor) + cmol(+)/kg (lab-style unit)
+    Serial.printf("Potassium   : %.0f mg/kg  |  %.3f cmol(+)/kg\n", k_mgkg, k_cmolkg);
+
+    // leave P raw in mg/kg since lab uses mg/kg for available P (not cmol)
+    Serial.printf("Phosphorus  : %.0f mg/kg\n", p_mgkg);
+
     Serial.printf("Salinity    : %d\n", sal);
     Serial.printf("TDS         : %d\n", tds);
     Serial.println("----------------------------");
@@ -111,18 +160,25 @@ void loop() {
     tft.println("Soil Sensor Readings");
 
     tft.setTextColor(ST77XX_WHITE);
-    tft.printf("Temp:   %.1f C\n", temp);
-    tft.printf("Moist:  %.1f %%\n", moisture);
-    tft.printf("EC:     %.0f\n", ec);
-    tft.printf("pH:     %.1f\n", ph);
-    tft.printf("N:      %d\n", n);
-    tft.printf("P:      %d\n", p);
-    tft.printf("K:      %d\n", k);
-    tft.printf("Sal:    %d\n", sal);
-    tft.printf("TDS:    %d\n", tds);
+    tft.printf("Temp: %.1f C\n", temp);
+    tft.printf("Moist: %.1f %%\n", moisture);
+
+    // Show EC converted to dS/m (lab unit)
+    tft.printf("EC: %.3f dS/m\n", ec_dSm);
+
+    tft.printf("pH: %.1f\n", ph);
+
+    // Show N as mg/kg (sensor)
+    tft.printf("N: %.0f mg/kg\n", n_mgkg);
+
+    // Show K in lab unit
+    tft.printf("K: %.3f cmol/kg\n", k_cmolkg);
+
+    tft.printf("Sal: %d\n", sal);
+    tft.printf("TDS: %d\n", tds);
 
   } else {
-    Serial.print("❌ Modbus Error: ");
+    Serial.print("Modbus Error: ");
     Serial.println(result);
 
     tft.setTextColor(ST77XX_RED);
