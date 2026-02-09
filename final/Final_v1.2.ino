@@ -98,8 +98,8 @@ class MyServerCallbacks : public BLEServerCallbacks {
 // ---- BLE Characteristic write callback ----
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
-    std::string rx = pCharacteristic->getValue();
-    if (!rx.empty()) {
+    auto rx = pCharacteristic->getValue();
+    if (rx.length() > 0) {
       Serial.print("Received from BLE client: ");
       Serial.println(rx.c_str());
     }
