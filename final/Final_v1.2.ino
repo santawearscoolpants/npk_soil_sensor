@@ -264,7 +264,7 @@ void loop() {
 
     // ---- TFT Output (Calibrated “Std”) ----
     tft.setTextColor(ST77XX_GREEN);
-    tft.println("Calibrated (Std)");
+    tft.println("LSACROFT SOIL SENSOR");
 
     tft.setTextColor(ST77XX_WHITE);
     tft.printf("Temp: %.1f C\n", temp);
