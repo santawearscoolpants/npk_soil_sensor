@@ -6,9 +6,26 @@
 
 // ============ TFT DISPLAY ============
 #define TFT_CS   5
-#define TFT_DC   4
-#define TFT_RST  2
+#define TFT_DC   27
+#define TFT_RST  26  
+#define TFT_SCLK 18
+#define TFT_MISO 19
+#define TFT_MOSI 23
+#define TFT_INITR_TAB INITR_BLACKTAB
+
+#define TFT_DATA_Y 14
+#define TFT_LINE_H 14
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+
+// Table layout constants
+#define TABLE_START_Y 20
+#define TABLE_HEADER_Y 20
+#define TABLE_ROW_H 11
+#define TABLE_COL1_X 0      // Parameter name (width: 35px)
+#define TABLE_COL2_X 35     // RAW value (width: 40px)
+#define TABLE_COL3_X 75     // CONV value (width: 40px)
+#define TABLE_COL4_X 115    // CALIB value (width: 45px)
+#define TABLE_COL_WIDTH 40
 
 // ============ RS485 / NPK SENSOR =====
 #define RE_DE_PIN 21
@@ -47,19 +64,119 @@ static inline float k_mgkg_to_cmolkg(float k_mgkg) {
   return k_mgkg / 391.0f;
 }
 
+// Custom dark green color for table separators (RGB565: 0x03E0)
+#define DARK_GREEN 0x03E0
+
+// Draw horizontal line separator
+void drawTableHLine(int y) {
+  tft.drawFastHLine(0, y, tft.width(), DARK_GREEN);
+}
+
+// Draw vertical line separator
+void drawTableVLine(int x) {
+  tft.drawFastVLine(x, TABLE_HEADER_Y, tft.height() - TABLE_HEADER_Y, DARK_GREEN);
+}
+
+// Draw table header
+void drawTableHeader() {
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  
+  // Clear header area
+  tft.fillRect(0, TABLE_HEADER_Y, tft.width(), TABLE_ROW_H, ST77XX_BLACK);
+  
+  // Draw header text
+  tft.setCursor(TABLE_COL1_X + 2, TABLE_HEADER_Y + 2);
+  tft.print("Param");
+  
+  tft.setCursor(TABLE_COL2_X + 2, TABLE_HEADER_Y + 2);
+  tft.print("RAW");
+  
+  tft.setCursor(TABLE_COL3_X + 2, TABLE_HEADER_Y + 2);
+  tft.print("CONV");
+  
+  tft.setCursor(TABLE_COL4_X + 2, TABLE_HEADER_Y + 2);
+  tft.print("CALIB");
+  
+  // Draw separator line below header
+  drawTableHLine(TABLE_HEADER_Y + TABLE_ROW_H);
+}
+
+// Draw table title
+void drawTftHead() {
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setTextSize(1);
+  tft.setCursor(0, 0);
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.println("LSACROFT SOIL SENSOR");
+}
+
+// Clear table data area
+void clearTftDataArea() {
+  tft.fillRect(0, TABLE_HEADER_Y + TABLE_ROW_H, tft.width(), 
+                tft.height() - (TABLE_HEADER_Y + TABLE_ROW_H), ST77XX_BLACK);
+}
+
+// Draw a table row with parameter name and three values
+void drawTableRow(uint8_t rowIndex, const char* paramName, uint16_t color,
+                  const char* rawVal, const char* convVal, const char* calibVal) {
+  int y = TABLE_HEADER_Y + TABLE_ROW_H + 1 + (rowIndex * TABLE_ROW_H);
+  
+  // Clear row area
+  tft.fillRect(0, y, tft.width(), TABLE_ROW_H, ST77XX_BLACK);
+  
+  // Draw parameter name (left column) - right-aligned for consistency
+  tft.setTextColor(color, ST77XX_BLACK);
+  tft.setCursor(TABLE_COL1_X + 2, y + 2);
+  tft.print(paramName);
+  
+  // Draw RAW value - right-aligned
+  tft.setCursor(TABLE_COL2_X + 2, y + 2);
+  tft.print(rawVal);
+  
+  // Draw CONV value - right-aligned
+  tft.setCursor(TABLE_COL3_X + 2, y + 2);
+  tft.print(convVal);
+  
+  // Draw CALIB value - right-aligned
+  tft.setCursor(TABLE_COL4_X + 2, y + 2);
+  tft.print(calibVal);
+  
+  // Draw horizontal separator line
+  drawTableHLine(y + TABLE_ROW_H);
+}
+
+// Draw vertical column separators
+void drawTableSeparators() {
+  drawTableVLine(TABLE_COL2_X);
+  drawTableVLine(TABLE_COL3_X);
+  drawTableVLine(TABLE_COL4_X);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  SPI.begin();
-  tft.initR(INITR_BLACKTAB);
+  // Explicit ESP32 VSPI pin mapping avoids board-default mismatches.
+  SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
+  tft.initR(TFT_INITR_TAB);
   tft.setRotation(1);
+  tft.setTextWrap(false);
 
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setTextColor(ST77XX_WHITE);
-  tft.setCursor(0, 0);
+  // Boot color sweep verifies TFT init visually.
+  tft.fillScreen(ST77XX_RED);
+  delay(200);
+  tft.fillScreen(ST77XX_GREEN);
+  delay(200);
+  tft.fillScreen(ST77XX_BLUE);
+  delay(200);
+
+  // Display boot message
+  drawTftHead();
   tft.setTextSize(1);
-  tft.println("Soil Sensor Boot");
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(0, TABLE_HEADER_Y + 5);
+  tft.print("Booting sensor...");
 
   pinMode(RE_DE_PIN, OUTPUT);
   digitalWrite(RE_DE_PIN, LOW);
@@ -75,10 +192,8 @@ void setup() {
 
 void loop() {
   uint8_t result = node.readHoldingRegisters(0x0000, 9);
-
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setCursor(0, 0);
-  tft.setTextSize(1);
+  char line[48];
+  clearTftDataArea();
 
   if (result == node.ku8MBSuccess) {
     uint16_t raw[9];
@@ -129,24 +244,68 @@ void loop() {
 
     Serial.println("================================================");
 
-    // ===== TFT OUTPUT (show calibrated “Standard”) =====
-    tft.setTextColor(ST77XX_GREEN);
-    tft.println("Calibrated (Std)");
-
-    tft.setTextColor(ST77XX_WHITE);
-    tft.printf("EC: %.3f dS/m\n", ec_std);
-    tft.printf("pH: %.2f\n", ph_std);
-    tft.printf("N:  %.4f %%\n", n_std);
-    tft.printf("P:  %.1f mg/kg\n", p_std);
-    tft.printf("K:  %.3f cmol/kg\n", k_std);
+    // ===== TFT OUTPUT (organized table format) =====
+    drawTftHead();
+    drawTableHeader();
+    drawTableSeparators();
+    
+    char rawStr[10], convStr[10], calibStr[10];
+    
+    // Temperature row
+    snprintf(rawStr, sizeof(rawStr), "%.1f", temp);
+    snprintf(convStr, sizeof(convStr), "-");
+    snprintf(calibStr, sizeof(calibStr), "-");
+    drawTableRow(0, "Temp", ST77XX_YELLOW, rawStr, convStr, calibStr);
+    
+    // Moisture row
+    snprintf(rawStr, sizeof(rawStr), "%.1f", moisture);
+    snprintf(convStr, sizeof(convStr), "-");
+    snprintf(calibStr, sizeof(calibStr), "-");
+    drawTableRow(1, "Moist", ST77XX_YELLOW, rawStr, convStr, calibStr);
+    
+    // EC row
+    snprintf(rawStr, sizeof(rawStr), "%.0f", ec_raw_uScm);
+    snprintf(convStr, sizeof(convStr), "%.2f", ec_sensor);
+    snprintf(calibStr, sizeof(calibStr), "%.2f", ec_std);
+    drawTableRow(2, "EC", ST77XX_WHITE, rawStr, convStr, calibStr);
+    
+    // pH row
+    snprintf(rawStr, sizeof(rawStr), "%.1f", ph_raw);
+    snprintf(convStr, sizeof(convStr), "%.1f", ph_sensor);
+    snprintf(calibStr, sizeof(calibStr), "%.1f", ph_std);
+    drawTableRow(3, "pH", ST77XX_WHITE, rawStr, convStr, calibStr);
+    
+    // N row
+    snprintf(rawStr, sizeof(rawStr), "%.0f", n_raw_mgkg);
+    snprintf(convStr, sizeof(convStr), "%.3f", n_sensor);
+    snprintf(calibStr, sizeof(calibStr), "%.3f", n_std);
+    drawTableRow(4, "N", ST77XX_WHITE, rawStr, convStr, calibStr);
+    
+    // P row
+    snprintf(rawStr, sizeof(rawStr), "%.0f", p_raw_mgkg);
+    snprintf(convStr, sizeof(convStr), "%.1f", p_sensor);
+    snprintf(calibStr, sizeof(calibStr), "%.1f", p_std);
+    drawTableRow(5, "P", ST77XX_WHITE, rawStr, convStr, calibStr);
+    
+    // K row
+    snprintf(rawStr, sizeof(rawStr), "%.0f", k_raw_mgkg);
+    snprintf(convStr, sizeof(convStr), "%.3f", k_sensor);
+    snprintf(calibStr, sizeof(calibStr), "%.3f", k_std);
+    drawTableRow(6, "K", ST77XX_WHITE, rawStr, convStr, calibStr);
 
   } else {
     Serial.print("Modbus Error: ");
     Serial.println(result);
-
-    tft.setTextColor(ST77XX_RED);
-    tft.println("Modbus Error");
-    tft.printf("Code: %d\n", result);
+    
+    // Display error on TFT
+    drawTftHead();
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    tft.setCursor(0, TABLE_HEADER_Y + 5);
+    tft.print("Modbus Error");
+    snprintf(line, sizeof(line), "Code: %d", result);
+    tft.setCursor(0, TABLE_HEADER_Y + TABLE_ROW_H + 5);
+    tft.print(line);
   }
 
   delay(1500);

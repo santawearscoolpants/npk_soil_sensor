@@ -251,20 +251,13 @@ void loop() {
     float p_sensor  = p_raw_mgkg;                     // mg/kg
     float k_sensor  = k_mgkg_to_cmolkg(k_raw_mgkg);   // cmol(+)/kg
 
-    // ---- OUTPUT LOGIC ----
-    // If EC reads 0, force pH/N/P/K to 0. Otherwise use normal values.
-    float ec_out = ec_sensor;                 // dS/m
-    float ph_out = 0.0f;                      // pH
-    float n_std  = 0.0f;                      // %
-    float p_std  = 0.0f;                      // mg/kg
-    float k_std  = 0.0f;                      // cmol(+)/kg
-
-    if (ec_out > 0.0f) {
-      ph_out = ph_sensor;                     // pH (direct sensor value)
-      n_std  = N_M  * n_sensor  + N_B;        // %
-      p_std  = P_M  * p_sensor  + P_B;        // mg/kg
-      k_std  = K_M  * k_sensor  + K_B;        // cmol(+)/kg
-    }
+    // ---- CALIBRATION (Sensor -> Standard) ----
+    // EC and pH use direct converted values (no calibration).
+    float ec_out = ec_sensor;                // dS/m
+    float ph_out = ph_sensor;                // pH
+    float n_std  = N_M  * n_sensor  + N_B;   // %
+    float p_std  = P_M  * p_sensor  + P_B;   // mg/kg
+    float k_std  = K_M  * k_sensor  + K_B;   // cmol(+)/kg
 
     // ---- TFT Output (Calibrated “Std”) ----
     tft.setTextColor(ST77XX_GREEN);
