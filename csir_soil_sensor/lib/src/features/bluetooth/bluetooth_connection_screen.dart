@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../services/bluetooth_service.dart';
+import '../../services/permission_service.dart';
 
 class BluetoothConnectionScreen extends ConsumerWidget {
   const BluetoothConnectionScreen({super.key});
@@ -147,7 +149,53 @@ class BluetoothConnectionScreen extends ConsumerWidget {
               ElevatedButton.icon(
                 onPressed: bleState.connectionStatus.startsWith('Scanning')
                     ? null
-                    : () {
+                    : () async {
+                        final permissionService =
+                            ref.read(permissionServiceProvider);
+                        final perm =
+                            await permissionService.ensureBluetoothPermissions();
+
+                        if (perm == BlePermissionState.permanentlyDenied) {
+                          if (!context.mounted) return;
+                          await showDialog<void>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Bluetooth Permission Needed'),
+                              content: const Text(
+                                'Bluetooth permission was permanently denied. Please enable it in system Settings to scan and connect to your device.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () async {
+                                    await openAppSettings();
+                                    if (context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  child: const Text('Open Settings'),
+                                ),
+                              ],
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (perm != BlePermissionState.granted) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Bluetooth permission denied. Please allow it to scan for devices.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
                         ref
                             .read(bluetoothServiceProvider.notifier)
                             .scanForDevices();
