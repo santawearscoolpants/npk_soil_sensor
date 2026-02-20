@@ -18,8 +18,8 @@
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // Table layout constants
-#define TABLE_START_Y 20
-#define TABLE_HEADER_Y 20
+#define TABLE_START_Y 10
+#define TABLE_HEADER_Y 10
 #define TABLE_ROW_H 11
 #define TABLE_COL1_X 0      // Parameter name (width: 35px)
 #define TABLE_COL2_X 35     // RAW value (width: 40px)
@@ -108,7 +108,7 @@ void drawTftHead() {
   tft.setTextSize(1);
   tft.setCursor(0, 0);
   tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  tft.println("LSACROFT SOIL SENSOR");
+  tft.print("    LSACROFT SOIL SENSOR");
 }
 
 // Clear table data area
@@ -201,6 +201,9 @@ void loop() {
 
     float moisture = raw[0] / 10.0f;
     float temp     = toSigned(raw[1]) / 10.0f;
+    float salinity_raw = (float)raw[7];      // salinity register
+    float salinity     = raw[7] / 10.0f;    // salinity in usual units
+    float tds          = (float)raw[8];    // TDS (Total Dissolved Solids)
 
     // ---- RAW SENSOR VALUES (as read) ----
     float ec_raw_uScm = (float)raw[2];      // typically µS/cm
@@ -226,6 +229,8 @@ void loop() {
     // ===== SERIAL OUTPUT =====
     Serial.println("==== SOIL (RAW -> CONVERTED -> CALIBRATED) ====");
     Serial.printf("Temp: %.1f C | Moist: %.1f %%\n", temp, moisture);
+    Serial.printf("Salinity raw: %.0f | Salinity: %.1f\n", salinity_raw, salinity);
+    Serial.printf("TDS: %.0f\n", tds);
 
     Serial.printf("EC raw: %.0f uS/cm | EC sensor: %.3f dS/m | EC std: %.3f dS/m\n",
                   ec_raw_uScm, ec_sensor, ec_std);
@@ -263,35 +268,47 @@ void loop() {
     snprintf(calibStr, sizeof(calibStr), "-");
     drawTableRow(1, "Moist", ST77XX_YELLOW, rawStr, convStr, calibStr);
     
+    // Salinity row (right below Moisture)
+    snprintf(rawStr, sizeof(rawStr), "%.0f", salinity_raw);
+    snprintf(convStr, sizeof(convStr), "%.1f", salinity);
+    snprintf(calibStr, sizeof(calibStr), "-");
+    drawTableRow(2, "Salin", ST77XX_YELLOW, rawStr, convStr, calibStr);
+    
+    // TDS row
+    snprintf(rawStr, sizeof(rawStr), "%.0f", tds);
+    snprintf(convStr, sizeof(convStr), "-");
+    snprintf(calibStr, sizeof(calibStr), "-");
+    drawTableRow(3, "TDS", ST77XX_YELLOW, rawStr, convStr, calibStr);
+    
     // EC row
     snprintf(rawStr, sizeof(rawStr), "%.0f", ec_raw_uScm);
     snprintf(convStr, sizeof(convStr), "%.2f", ec_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.2f", ec_std);
-    drawTableRow(2, "EC", ST77XX_WHITE, rawStr, convStr, calibStr);
+    drawTableRow(4, "EC", ST77XX_WHITE, rawStr, convStr, calibStr);
     
     // pH row
     snprintf(rawStr, sizeof(rawStr), "%.1f", ph_raw);
     snprintf(convStr, sizeof(convStr), "%.1f", ph_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.1f", ph_std);
-    drawTableRow(3, "pH", ST77XX_WHITE, rawStr, convStr, calibStr);
+    drawTableRow(5, "pH", ST77XX_WHITE, rawStr, convStr, calibStr);
     
     // N row
     snprintf(rawStr, sizeof(rawStr), "%.0f", n_raw_mgkg);
     snprintf(convStr, sizeof(convStr), "%.3f", n_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.3f", n_std);
-    drawTableRow(4, "N", ST77XX_WHITE, rawStr, convStr, calibStr);
+    drawTableRow(6, "N", ST77XX_WHITE, rawStr, convStr, calibStr);
     
     // P row
     snprintf(rawStr, sizeof(rawStr), "%.0f", p_raw_mgkg);
     snprintf(convStr, sizeof(convStr), "%.1f", p_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.1f", p_std);
-    drawTableRow(5, "P", ST77XX_WHITE, rawStr, convStr, calibStr);
+    drawTableRow(7, "P", ST77XX_WHITE, rawStr, convStr, calibStr);
     
     // K row
     snprintf(rawStr, sizeof(rawStr), "%.0f", k_raw_mgkg);
     snprintf(convStr, sizeof(convStr), "%.3f", k_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.3f", k_std);
-    drawTableRow(6, "K", ST77XX_WHITE, rawStr, convStr, calibStr);
+    drawTableRow(8, "K", ST77XX_WHITE, rawStr, convStr, calibStr);
 
   } else {
     Serial.print("Modbus Error: ");
