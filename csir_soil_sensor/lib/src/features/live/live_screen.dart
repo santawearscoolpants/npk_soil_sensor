@@ -289,8 +289,65 @@ class _LiveReadingCard extends StatelessWidget {
                   value: '${reading.salinity.toStringAsFixed(2)}',
                   style: chipStyle,
                 ),
+                if (reading.tds != null)
+                  _MetricChip(
+                    label: 'TDS',
+                    value: reading.tds!.toStringAsFixed(0),
+                    style: chipStyle,
+                  ),
               ],
             ),
+            const SizedBox(height: 16),
+            if (reading.ecCal != null ||
+                reading.phCal != null ||
+                reading.nCal != null ||
+                reading.pCal != null ||
+                reading.kCal != null) ...[
+              Text(
+                'Calibrated Preview',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (reading.ecCal != null)
+                    _MetricChip(
+                      label: 'EC (cal)',
+                      value: '${reading.ecCal!.toStringAsFixed(3)} dS/m',
+                      style: chipStyle,
+                    ),
+                  if (reading.phCal != null)
+                    _MetricChip(
+                      label: 'pH (cal)',
+                      value: reading.phCal!.toStringAsFixed(2),
+                      style: chipStyle,
+                    ),
+                  if (reading.nCal != null)
+                    _MetricChip(
+                      label: 'N (cal)',
+                      value: '${reading.nCal!.toStringAsFixed(3)} %',
+                      style: chipStyle,
+                    ),
+                  if (reading.pCal != null)
+                    _MetricChip(
+                      label: 'P (cal)',
+                      value: '${reading.pCal!.toStringAsFixed(1)} mg/kg',
+                      style: chipStyle,
+                    ),
+                  if (reading.kCal != null)
+                    _MetricChip(
+                      label: 'K (cal)',
+                      value: '${reading.kCal!.toStringAsFixed(3)} cmol(+)/kg',
+                      style: chipStyle,
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

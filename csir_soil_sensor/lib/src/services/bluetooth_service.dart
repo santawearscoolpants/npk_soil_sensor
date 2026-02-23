@@ -21,6 +21,17 @@ class LiveReading {
     required this.phosphorus,
     required this.potassium,
     required this.salinity,
+    this.tds,
+    this.ecConv,
+    this.ecCal,
+    this.phConv,
+    this.phCal,
+    this.nConv,
+    this.nCal,
+    this.pConv,
+    this.pCal,
+    this.kConv,
+    this.kCal,
   });
 
   final int timestamp;
@@ -33,6 +44,21 @@ class LiveReading {
   final int potassium;
   final double salinity;
 
+  // Raw TDS value (not persisted in history yet)
+  final double? tds;
+
+  // Optional converted + calibrated values (if provided by firmware JSON)
+  final double? ecConv; // EC converted (dS/m)
+  final double? ecCal;  // EC calibrated (dS/m)
+  final double? phConv;
+  final double? phCal;
+  final double? nConv;  // N converted (%)
+  final double? nCal;   // N calibrated (%)
+  final double? pConv;  // P converted (mg/kg)
+  final double? pCal;   // P calibrated (mg/kg)
+  final double? kConv;  // K converted (cmol(+)/kg)
+  final double? kCal;   // K calibrated (cmol(+)/kg)
+
   factory LiveReading.fromJson(Map<String, dynamic> json) {
     return LiveReading(
       timestamp: json['timestamp'] as int,
@@ -44,6 +70,17 @@ class LiveReading {
       phosphorus: (json['phosphorus'] as num).toInt(),
       potassium: (json['potassium'] as num).toInt(),
       salinity: (json['salinity'] as num).toDouble(),
+      tds: json['tds'] != null ? (json['tds'] as num).toDouble() : null,
+      ecConv: json['ec_conv'] != null ? (json['ec_conv'] as num).toDouble() : null,
+      ecCal: json['ec_cal'] != null ? (json['ec_cal'] as num).toDouble() : null,
+      phConv: json['ph_conv'] != null ? (json['ph_conv'] as num).toDouble() : null,
+      phCal: json['ph_cal'] != null ? (json['ph_cal'] as num).toDouble() : null,
+      nConv: json['n_conv'] != null ? (json['n_conv'] as num).toDouble() : null,
+      nCal: json['n_cal'] != null ? (json['n_cal'] as num).toDouble() : null,
+      pConv: json['p_conv'] != null ? (json['p_conv'] as num).toDouble() : null,
+      pCal: json['p_cal'] != null ? (json['p_cal'] as num).toDouble() : null,
+      kConv: json['k_conv'] != null ? (json['k_conv'] as num).toDouble() : null,
+      kCal: json['k_cal'] != null ? (json['k_cal'] as num).toDouble() : null,
     );
   }
 }
@@ -362,6 +399,16 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
         phosphorus: rawReading.phosphorus,
         potassium: rawReading.potassium,
         salinity: rawReading.salinity,
+        ecConv: rawReading.ecConv,
+        ecCal: rawReading.ecCal,
+        phConv: rawReading.phConv,
+        phCal: rawReading.phCal,
+        nConv: rawReading.nConv,
+        nCal: rawReading.nCal,
+        pConv: rawReading.pConv,
+        pCal: rawReading.pCal,
+        kConv: rawReading.kConv,
+        kCal: rawReading.kCal,
       );
 
       print('Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}');
