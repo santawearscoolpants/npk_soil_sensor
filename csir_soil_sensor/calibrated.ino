@@ -1,45 +1,34 @@
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
-#include <BLE2902.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <Adafruit_ST77xx.h>
 #include <ModbusMaster.h>
 
-// ============ BLE CONFIGURATION ====================================
-#define SERVICE_UUID        "0000F001-0000-1000-8000-00805F9B34FB"
-#define CHARACTERISTIC_UUID "0000F002-0000-1000-8000-00805F9B34FB"
+// ============ TFT DISPLAY ============
+#define TFT_CS   5
+#define TFT_DC   27
+#define TFT_RST  26  
+#define TFT_SCLK 18
+#define TFT_MISO 19
+#define TFT_MOSI 23
+#define TFT_INITR_TAB INITR_BLACKTAB
 
-BLEServer *pServer = nullptr;
-BLECharacteristic *pCharacteristic = nullptr;
-bool deviceConnected = false;
-
-// Sensor data update interval (milliseconds)
-const unsigned long UPDATE_INTERVAL = 2000; // Send data every 2 seconds
-unsigned long lastUpdateTime = 0;
-
-// ============ TFT DISPLAY ===========================================
-#define TFT_CS   5    // CS
-#define TFT_DC   4    // A0 / DC
-#define TFT_RST  2    // RESET pin of TFT
-
+#define TFT_DATA_Y 14
+#define TFT_LINE_H 14
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
-// Table layout constants (from calibrated.ino)
+// Table layout constants
+#define TABLE_START_Y 10
 #define TABLE_HEADER_Y 10
-#define TABLE_ROW_H    11
-#define TABLE_COL1_X   0      // Parameter name (width: 35px)
-#define TABLE_COL2_X   35     // RAW value (width: 40px)
-#define TABLE_COL3_X   75     // CONV value (width: 40px)
-#define TABLE_COL4_X   115    // CALIB value (width: 45px)
+#define TABLE_ROW_H 11
+#define TABLE_COL1_X 0      // Parameter name (width: 35px)
+#define TABLE_COL2_X 35     // RAW value (width: 40px)
+#define TABLE_COL3_X 75     // CONV value (width: 40px)
+#define TABLE_COL4_X 115    // CALIB value (width: 45px)
+#define TABLE_COL_WIDTH 40
 
-// Custom dark green color for table separators (RGB565: 0x03E0)
-#define DARK_GREEN 0x03E0
-
-// ============ RS485 / NPK SENSOR ====================================
-#define RE_DE_PIN 21   // moved from 4 to 21
+// ============ RS485 / NPK SENSOR =====
+#define RE_DE_PIN 21
 #define RS485_RX  17
 #define RS485_TX  16
 
@@ -75,7 +64,8 @@ static inline float k_mgkg_to_cmolkg(float k_mgkg) {
   return k_mgkg / 391.0f;
 }
 
-// ===== TFT TABLE RENDERING (from calibrated.ino) =====
+// Custom dark green color for table separators (RGB565: 0x03E0)
+#define DARK_GREEN 0x03E0
 
 // Draw horizontal line separator
 void drawTableHLine(int y) {
@@ -135,20 +125,20 @@ void drawTableRow(uint8_t rowIndex, const char* paramName, uint16_t color,
   // Clear row area
   tft.fillRect(0, y, tft.width(), TABLE_ROW_H, ST77XX_BLACK);
   
-  // Draw parameter name (left column)
+  // Draw parameter name (left column) - right-aligned for consistency
   tft.setTextColor(color, ST77XX_BLACK);
   tft.setCursor(TABLE_COL1_X + 2, y + 2);
   tft.print(paramName);
   
-  // Draw RAW value
+  // Draw RAW value - right-aligned
   tft.setCursor(TABLE_COL2_X + 2, y + 2);
   tft.print(rawVal);
   
-  // Draw CONV value
+  // Draw CONV value - right-aligned
   tft.setCursor(TABLE_COL3_X + 2, y + 2);
   tft.print(convVal);
   
-  // Draw CALIB value
+  // Draw CALIB value - right-aligned
   tft.setCursor(TABLE_COL4_X + 2, y + 2);
   tft.print(calibVal);
   
@@ -163,130 +153,33 @@ void drawTableSeparators() {
   drawTableVLine(TABLE_COL4_X);
 }
 
-// ---- BLE Server connection callbacks ----
-class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) override {
-    deviceConnected = true;
-    Serial.println("BLE client CONNECTED.");
-  }
-
-  void onDisconnect(BLEServer* pServer) override {
-    deviceConnected = false;
-    Serial.println("BLE client DISCONNECTED.");
-
-    // Restart advertising so another device can connect again
-    pServer->getAdvertising()->start();
-    Serial.println("Advertising restarted.");
-  }
-};
-
-// ---- BLE Characteristic write callback ----
-class MyCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) override {
-    String value = pCharacteristic->getValue();  // Arduino String
-
-    if (value.length() > 0) {
-      Serial.print("Received from BLE client: ");
-      Serial.println(value);
-    }
-  }
-};
-
-// Generate sensor reading JSON string including raw, converted, and calibrated values
-void generateSensorDataJSON(char* buffer, size_t bufferSize,
-                            float moisture,
-                            float ec_raw_uScm, float ec_sensor, float ec_std,
-                            float temperature,
-                            float ph_raw, float ph_sensor, float ph_std,
-                            float n_raw_mgkg, float n_sensor, float n_std,
-                            float p_raw_mgkg, float p_sensor, float p_std,
-                            float k_raw_mgkg, float k_sensor, float k_std,
-                            float salinity_raw, float salinity, float tds) {
-  // Get current Unix timestamp (simplified - uses millis since boot)
-  unsigned long timestamp = millis() / 1000;
-
-  // Build JSON string directly into buffer (more memory efficient)
-  // Top-level "raw" fields are kept for backward compatibility with the app.
-  // Additional *_conv and *_cal fields expose converted + calibrated values.
-  snprintf(
-    buffer,
-    bufferSize,
-    "{"
-      "\"timestamp\":%lu,"
-      "\"moisture\":%.1f,"
-      "\"ec\":%.0f,"                // raw EC (µS/cm)
-      "\"temperature\":%.1f,"
-      "\"ph\":%.1f,"                // raw pH
-      "\"nitrogen\":%.0f,"          // raw N (mg/kg)
-      "\"phosphorus\":%.0f,"        // raw P (mg/kg)
-      "\"potassium\":%.0f,"         // raw K (mg/kg)
-      "\"salinity_raw\":%.0f,"
-      "\"salinity\":%.1f,"
-      "\"tds\":%.0f,"
-      "\"ec_conv\":%.3f,"
-      "\"ec_cal\":%.3f,"
-      "\"ph_conv\":%.2f,"
-      "\"ph_cal\":%.2f,"
-      "\"n_conv\":%.4f,"
-      "\"n_cal\":%.4f,"
-      "\"p_conv\":%.2f,"
-      "\"p_cal\":%.2f,"
-      "\"k_conv\":%.3f,"
-      "\"k_cal\":%.3f"
-    "}",
-    timestamp,
-    moisture,
-    ec_raw_uScm,
-    temperature,
-    ph_raw,
-    n_raw_mgkg,
-    p_raw_mgkg,
-    k_raw_mgkg,
-    salinity_raw,
-    salinity,
-    tds,
-    ec_sensor,
-    ec_std,
-    ph_sensor,
-    ph_std,
-    n_sensor,
-    n_std,
-    p_sensor,
-    p_std,
-    k_sensor,
-    k_std
-  );
-}
-
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println();
-  Serial.println("ESP32 + TFT + 7-in-1 NPK Sensor + BLE");
 
-  // --- TFT setup ---
-  SPI.begin();  // VSPI: SCK=18, MISO=19, MOSI=23
-
-  tft.initR(INITR_BLACKTAB);  // same TAB you used before
+  // Explicit ESP32 VSPI pin mapping avoids board-default mismatches.
+  SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
+  tft.initR(TFT_INITR_TAB);
   tft.setRotation(1);
+  tft.setTextWrap(false);
 
-  // Quick color test on boot
+  // Boot color sweep verifies TFT init visually.
   tft.fillScreen(ST77XX_RED);
-  delay(300);
+  delay(200);
   tft.fillScreen(ST77XX_GREEN);
-  delay(300);
+  delay(200);
   tft.fillScreen(ST77XX_BLUE);
-  delay(300);
-  tft.fillScreen(ST77XX_BLACK);
+  delay(200);
 
-  tft.setCursor(0, 0);
-  tft.setTextColor(ST77XX_WHITE);
+  // Display boot message
+  drawTftHead();
   tft.setTextSize(1);
-  tft.println("Booting soil sensor...");
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(0, TABLE_HEADER_Y + 5);
+  tft.print("Booting sensor...");
 
-  // --- RS485 / Modbus setup ---
   pinMode(RE_DE_PIN, OUTPUT);
-  digitalWrite(RE_DE_PIN, LOW);    // receive mode by default
+  digitalWrite(RE_DE_PIN, LOW);
 
   RS485Serial.begin(BAUD_RATE, SERIAL_8N1, RS485_RX, RS485_TX);
 
@@ -294,49 +187,7 @@ void setup() {
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
 
-  // --- BLE setup ---
-  // 1. Initialize BLE device (name appears in BLE apps on Android & iOS)
-  BLEDevice::init("ESP32_BLE_TEST");
-
-  // 2. Create BLE server
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-
-  // 3. Create BLE service
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  // 4. Create BLE characteristic (read/write/notify/indicate)
-  pCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ   |
-    BLECharacteristic::PROPERTY_WRITE  |
-    BLECharacteristic::PROPERTY_NOTIFY |
-    BLECharacteristic::PROPERTY_INDICATE
-  );
-
-  // Add descriptor for notifications (required for iOS)
-  pCharacteristic->addDescriptor(new BLE2902());
-  
-  pCharacteristic->setCallbacks(new MyCallbacks());
-  pCharacteristic->setValue("Hello from ESP32!");
-
-  // 5. Start the service
-  pService->start();
-
-  // 6. Start advertising so phones can discover the ESP32
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);  // recommended values for iOS
-  pAdvertising->setMinPreferred(0x12);
-
-  BLEDevice::startAdvertising();
-
-  Serial.println("BLE started.");
-  Serial.println("Now advertising as: ESP32_BLE_TEST");
-  Serial.println("Waiting for app connection...");
-  Serial.println("Sensor data will be sent every 2 seconds when connected.");
-  Serial.println("Setup complete.");
+  Serial.println("System Ready");
 }
 
 void loop() {
@@ -348,18 +199,18 @@ void loop() {
     uint16_t raw[9];
     for (int i = 0; i < 9; i++) raw[i] = node.getResponseBuffer(i);
 
-    float moisture    = raw[0] / 10.0f;
-    float temp        = toSigned(raw[1]) / 10.0f;
-    float salinityRaw = (float)raw[7];       // salinity register
-    float salinity    = raw[7] / 10.0f;      // salinity in usual units
-    float tds         = (float)raw[8];       // TDS (Total Dissolved Solids)
+    float moisture = raw[0] / 10.0f;
+    float temp     = toSigned(raw[1]) / 10.0f;
+    float salinity_raw = (float)raw[7];      // salinity register
+    float salinity     = raw[7] / 10.0f;    // salinity in usual units
+    float tds          = (float)raw[8];    // TDS (Total Dissolved Solids)
 
     // ---- RAW SENSOR VALUES (as read) ----
-    float ec_raw_uScm = (float)raw[2];       // typically µS/cm
-    float ph_raw      = raw[3] / 10.0f;      // pH
-    float n_raw_mgkg  = (float)raw[4];       // mg/kg (sensor claim)
-    float p_raw_mgkg  = (float)raw[5];       // mg/kg
-    float k_raw_mgkg  = (float)raw[6];       // mg/kg
+    float ec_raw_uScm = (float)raw[2];      // typically µS/cm
+    float ph_raw      = raw[3] / 10.0f;     // pH
+    float n_raw_mgkg  = (float)raw[4];      // mg/kg (sensor claim)
+    float p_raw_mgkg  = (float)raw[5];      // mg/kg
+    float k_raw_mgkg  = (float)raw[6];      // mg/kg
 
     // ---- UNIT CONVERSIONS (BEFORE EQUATIONS) ----
     float ec_sensor = ec_uScm_to_dSm(ec_raw_uScm);     // now in dS/m
@@ -378,7 +229,7 @@ void loop() {
     // ===== SERIAL OUTPUT =====
     Serial.println("==== SOIL (RAW -> CONVERTED -> CALIBRATED) ====");
     Serial.printf("Temp: %.1f C | Moist: %.1f %%\n", temp, moisture);
-    Serial.printf("Salinity raw: %.0f | Salinity: %.1f\n", salinityRaw, salinity);
+    Serial.printf("Salinity raw: %.0f | Salinity: %.1f\n", salinity_raw, salinity);
     Serial.printf("TDS: %.0f\n", tds);
 
     Serial.printf("EC raw: %.0f uS/cm | EC sensor: %.3f dS/m | EC std: %.3f dS/m\n",
@@ -417,8 +268,8 @@ void loop() {
     snprintf(calibStr, sizeof(calibStr), "-");
     drawTableRow(1, "Moist", ST77XX_YELLOW, rawStr, convStr, calibStr);
     
-    // Salinity row
-    snprintf(rawStr, sizeof(rawStr), "%.0f", salinityRaw);
+    // Salinity row (right below Moisture)
+    snprintf(rawStr, sizeof(rawStr), "%.0f", salinity_raw);
     snprintf(convStr, sizeof(convStr), "%.1f", salinity);
     snprintf(calibStr, sizeof(calibStr), "-");
     drawTableRow(2, "Salin", ST77XX_YELLOW, rawStr, convStr, calibStr);
@@ -458,31 +309,6 @@ void loop() {
     snprintf(convStr, sizeof(convStr), "%.3f", k_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.3f", k_std);
     drawTableRow(8, "K", ST77XX_WHITE, rawStr, convStr, calibStr);
-
-    // ===== BLE OUTPUT (JSON for app) =====
-    if (deviceConnected && (millis() - lastUpdateTime >= UPDATE_INTERVAL)) {
-      char sensorData[512]; // Buffer for JSON string
-      generateSensorDataJSON(
-        sensorData,
-        sizeof(sensorData),
-        moisture,
-        ec_raw_uScm, ec_sensor, ec_std,
-        temp,
-        ph_raw, ph_sensor, ph_std,
-        n_raw_mgkg, n_sensor, n_std,
-        p_raw_mgkg, p_sensor, p_std,
-        k_raw_mgkg, k_sensor, k_std,
-        salinityRaw, salinity, tds
-      );
-
-      pCharacteristic->setValue(sensorData);
-      pCharacteristic->notify();
-
-      Serial.print("Sent sensor data via BLE: ");
-      Serial.println(sensorData);
-
-      lastUpdateTime = millis();
-    }
 
   } else {
     Serial.print("Modbus Error: ");
