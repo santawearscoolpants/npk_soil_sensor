@@ -22,8 +22,8 @@ unsigned long lastUpdateTime = 0;
 
 // ============ TFT DISPLAY ===========================================
 #define TFT_CS   5    // CS
-#define TFT_DC   4    // A0 / DC
-#define TFT_RST  2    // RESET pin of TFT
+#define TFT_DC   27    // A0 / DC
+#define TFT_RST  26    // RESET pin of TFT
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 

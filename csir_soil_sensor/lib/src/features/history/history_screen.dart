@@ -242,6 +242,41 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
     final avgPH = widget.readings.map((r) => r.ph).reduce((a, b) => a + b) /
         widget.readings.length;
 
+    // Average raw nutrients (mg/kg) for calibration preview
+    final avgN = widget.readings
+            .map((r) => r.nitrogen.toDouble())
+            .reduce((a, b) => a + b) /
+        widget.readings.length;
+    final avgP = widget.readings
+            .map((r) => r.phosphorus.toDouble())
+            .reduce((a, b) => a + b) /
+        widget.readings.length;
+    final avgK = widget.readings
+            .map((r) => r.potassium.toDouble())
+            .reduce((a, b) => a + b) /
+        widget.readings.length;
+
+    // ---- Match firmware calibration pipeline (calibrated.ino / esp32_soil_sensor_real.ino) ----
+    // EC: raw in µS/cm -> sensor in dS/m -> calibrated in dS/m
+    final ecSensor = avgEC / 1000.0;
+    final ecStd = 0.220636585 * ecSensor + 0.06098882155;
+
+    // pH: raw already pH units
+    final phSensor = avgPH;
+    final phStd = 0.06749371859 * phSensor + 5.126893844;
+
+    // N: raw in mg/kg -> % -> calibrated %
+    final nSensor = avgN / 10000.0;
+    final nStd = 0.005542328042 * nSensor + 0.1148412698;
+
+    // P: raw already mg/kg -> calibrated mg/kg
+    final pSensor = avgP;
+    final pStd = 0.0414315776 * pSensor + 7.840383242;
+
+    // K: raw mg/kg -> cmol(+)/kg -> calibrated cmol(+)/kg
+    final kSensor = avgK / 391.0;
+    final kStd = 0.3580341716 * kSensor + 0.1642282588;
+
     return AlertDialog(
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -299,6 +334,34 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
             _DetailRow(
               label: 'pH',
               value: avgPH.toStringAsFixed(1),
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+            const Text(
+              'Calibrated Preview',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            _DetailRow(
+              label: 'EC (cal)',
+              value: '${ecStd.toStringAsFixed(3)} dS/m',
+            ),
+            _DetailRow(
+              label: 'pH (cal)',
+              value: phStd.toStringAsFixed(2),
+            ),
+            _DetailRow(
+              label: 'N (cal)',
+              value: '${nStd.toStringAsFixed(3)} %',
+            ),
+            _DetailRow(
+              label: 'P (cal)',
+              value: '${pStd.toStringAsFixed(1)} mg/kg',
+            ),
+            _DetailRow(
+              label: 'K (cal)',
+              value: '${kStd.toStringAsFixed(3)} cmol(+)/kg',
             ),
             const SizedBox(height: 16),
             const Divider(),

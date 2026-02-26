@@ -289,12 +289,13 @@ class _LiveReadingCard extends StatelessWidget {
                   value: '${reading.salinity.toStringAsFixed(2)}',
                   style: chipStyle,
                 ),
-                if (reading.tds != null)
-                  _MetricChip(
-                    label: 'TDS',
-                    value: reading.tds!.toStringAsFixed(0),
-                    style: chipStyle,
-                  ),
+                _MetricChip(
+                  label: 'TDS',
+                  value: '${reading.tds} ppm',
+                  style: chipStyle,
+                ),
+                
+    
               ],
             ),
             const SizedBox(height: 16),

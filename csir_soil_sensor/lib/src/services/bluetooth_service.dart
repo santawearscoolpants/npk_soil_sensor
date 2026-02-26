@@ -21,7 +21,8 @@ class LiveReading {
     required this.phosphorus,
     required this.potassium,
     required this.salinity,
-    this.tds,
+    required this.tds,
+    
     this.ecConv,
     this.ecCal,
     this.phConv,
@@ -45,7 +46,7 @@ class LiveReading {
   final double salinity;
 
   // Raw TDS value (not persisted in history yet)
-  final double? tds;
+  final int tds;
 
   // Optional converted + calibrated values (if provided by firmware JSON)
   final double? ecConv; // EC converted (dS/m)
@@ -70,7 +71,7 @@ class LiveReading {
       phosphorus: (json['phosphorus'] as num).toInt(),
       potassium: (json['potassium'] as num).toInt(),
       salinity: (json['salinity'] as num).toDouble(),
-      tds: json['tds'] != null ? (json['tds'] as num).toDouble() : null,
+      tds: (json['tds'] as num).toInt(),
       ecConv: json['ec_conv'] != null ? (json['ec_conv'] as num).toDouble() : null,
       ecCal: json['ec_cal'] != null ? (json['ec_cal'] as num).toDouble() : null,
       phConv: json['ph_conv'] != null ? (json['ph_conv'] as num).toDouble() : null,
@@ -399,6 +400,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
         phosphorus: rawReading.phosphorus,
         potassium: rawReading.potassium,
         salinity: rawReading.salinity,
+        tds: rawReading.tds,
         ecConv: rawReading.ecConv,
         ecCal: rawReading.ecCal,
         phConv: rawReading.phConv,
