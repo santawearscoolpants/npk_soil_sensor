@@ -19,6 +19,12 @@ class SensorReadings extends Table {
   IntColumn get phosphorus => integer()();
   IntColumn get potassium => integer()();
   RealColumn get salinity => real()();
+  // Calibrated values (persisted for charts/exports)
+  RealColumn get ecCal => real().nullable()();  // dS/m
+  RealColumn get phCal => real().nullable()();  // pH
+  RealColumn get nCal => real().nullable()();   // %
+  RealColumn get pCal => real().nullable()();   // mg/kg
+  RealColumn get kCal => real().nullable()();   // cmol(+)/kg
   IntColumn get cropParamsId =>
       integer().nullable().references(CropParams, #id)();
 }
@@ -51,7 +57,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor) : super();
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // Add calibrated columns; existing rows get NULLs.
+            await m.addColumn(sensorReadings, sensorReadings.ecCal);
+            await m.addColumn(sensorReadings, sensorReadings.phCal);
+            await m.addColumn(sensorReadings, sensorReadings.nCal);
+            await m.addColumn(sensorReadings, sensorReadings.pCal);
+            await m.addColumn(sensorReadings, sensorReadings.kCal);
+          }
+        },
+      );
 }
 
 LazyDatabase _openConnection() {

@@ -628,6 +628,51 @@ class $SensorReadingsTable extends SensorReadings
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _ecCalMeta = const VerificationMeta('ecCal');
+  @override
+  late final GeneratedColumn<double> ecCal = GeneratedColumn<double>(
+    'ec_cal',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _phCalMeta = const VerificationMeta('phCal');
+  @override
+  late final GeneratedColumn<double> phCal = GeneratedColumn<double>(
+    'ph_cal',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nCalMeta = const VerificationMeta('nCal');
+  @override
+  late final GeneratedColumn<double> nCal = GeneratedColumn<double>(
+    'n_cal',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pCalMeta = const VerificationMeta('pCal');
+  @override
+  late final GeneratedColumn<double> pCal = GeneratedColumn<double>(
+    'p_cal',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _kCalMeta = const VerificationMeta('kCal');
+  @override
+  late final GeneratedColumn<double> kCal = GeneratedColumn<double>(
+    'k_cal',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _cropParamsIdMeta = const VerificationMeta(
     'cropParamsId',
   );
@@ -654,6 +699,11 @@ class $SensorReadingsTable extends SensorReadings
     phosphorus,
     potassium,
     salinity,
+    ecCal,
+    phCal,
+    nCal,
+    pCal,
+    kCal,
     cropParamsId,
   ];
   @override
@@ -740,6 +790,36 @@ class $SensorReadingsTable extends SensorReadings
     } else if (isInserting) {
       context.missing(_salinityMeta);
     }
+    if (data.containsKey('ec_cal')) {
+      context.handle(
+        _ecCalMeta,
+        ecCal.isAcceptableOrUnknown(data['ec_cal']!, _ecCalMeta),
+      );
+    }
+    if (data.containsKey('ph_cal')) {
+      context.handle(
+        _phCalMeta,
+        phCal.isAcceptableOrUnknown(data['ph_cal']!, _phCalMeta),
+      );
+    }
+    if (data.containsKey('n_cal')) {
+      context.handle(
+        _nCalMeta,
+        nCal.isAcceptableOrUnknown(data['n_cal']!, _nCalMeta),
+      );
+    }
+    if (data.containsKey('p_cal')) {
+      context.handle(
+        _pCalMeta,
+        pCal.isAcceptableOrUnknown(data['p_cal']!, _pCalMeta),
+      );
+    }
+    if (data.containsKey('k_cal')) {
+      context.handle(
+        _kCalMeta,
+        kCal.isAcceptableOrUnknown(data['k_cal']!, _kCalMeta),
+      );
+    }
     if (data.containsKey('crop_params_id')) {
       context.handle(
         _cropParamsIdMeta,
@@ -798,6 +878,26 @@ class $SensorReadingsTable extends SensorReadings
         DriftSqlType.double,
         data['${effectivePrefix}salinity'],
       )!,
+      ecCal: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ec_cal'],
+      ),
+      phCal: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ph_cal'],
+      ),
+      nCal: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}n_cal'],
+      ),
+      pCal: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}p_cal'],
+      ),
+      kCal: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}k_cal'],
+      ),
       cropParamsId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}crop_params_id'],
@@ -822,6 +922,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
   final int phosphorus;
   final int potassium;
   final double salinity;
+  final double? ecCal;
+  final double? phCal;
+  final double? nCal;
+  final double? pCal;
+  final double? kCal;
   final int? cropParamsId;
   const SensorReading({
     required this.id,
@@ -834,6 +939,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
     required this.phosphorus,
     required this.potassium,
     required this.salinity,
+    this.ecCal,
+    this.phCal,
+    this.nCal,
+    this.pCal,
+    this.kCal,
     this.cropParamsId,
   });
   @override
@@ -849,6 +959,21 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
     map['phosphorus'] = Variable<int>(phosphorus);
     map['potassium'] = Variable<int>(potassium);
     map['salinity'] = Variable<double>(salinity);
+    if (!nullToAbsent || ecCal != null) {
+      map['ec_cal'] = Variable<double>(ecCal);
+    }
+    if (!nullToAbsent || phCal != null) {
+      map['ph_cal'] = Variable<double>(phCal);
+    }
+    if (!nullToAbsent || nCal != null) {
+      map['n_cal'] = Variable<double>(nCal);
+    }
+    if (!nullToAbsent || pCal != null) {
+      map['p_cal'] = Variable<double>(pCal);
+    }
+    if (!nullToAbsent || kCal != null) {
+      map['k_cal'] = Variable<double>(kCal);
+    }
     if (!nullToAbsent || cropParamsId != null) {
       map['crop_params_id'] = Variable<int>(cropParamsId);
     }
@@ -867,6 +992,15 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
       phosphorus: Value(phosphorus),
       potassium: Value(potassium),
       salinity: Value(salinity),
+      ecCal: ecCal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ecCal),
+      phCal: phCal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(phCal),
+      nCal: nCal == null && nullToAbsent ? const Value.absent() : Value(nCal),
+      pCal: pCal == null && nullToAbsent ? const Value.absent() : Value(pCal),
+      kCal: kCal == null && nullToAbsent ? const Value.absent() : Value(kCal),
       cropParamsId: cropParamsId == null && nullToAbsent
           ? const Value.absent()
           : Value(cropParamsId),
@@ -889,6 +1023,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
       phosphorus: serializer.fromJson<int>(json['phosphorus']),
       potassium: serializer.fromJson<int>(json['potassium']),
       salinity: serializer.fromJson<double>(json['salinity']),
+      ecCal: serializer.fromJson<double?>(json['ecCal']),
+      phCal: serializer.fromJson<double?>(json['phCal']),
+      nCal: serializer.fromJson<double?>(json['nCal']),
+      pCal: serializer.fromJson<double?>(json['pCal']),
+      kCal: serializer.fromJson<double?>(json['kCal']),
       cropParamsId: serializer.fromJson<int?>(json['cropParamsId']),
     );
   }
@@ -906,6 +1045,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
       'phosphorus': serializer.toJson<int>(phosphorus),
       'potassium': serializer.toJson<int>(potassium),
       'salinity': serializer.toJson<double>(salinity),
+      'ecCal': serializer.toJson<double?>(ecCal),
+      'phCal': serializer.toJson<double?>(phCal),
+      'nCal': serializer.toJson<double?>(nCal),
+      'pCal': serializer.toJson<double?>(pCal),
+      'kCal': serializer.toJson<double?>(kCal),
       'cropParamsId': serializer.toJson<int?>(cropParamsId),
     };
   }
@@ -921,6 +1065,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
     int? phosphorus,
     int? potassium,
     double? salinity,
+    Value<double?> ecCal = const Value.absent(),
+    Value<double?> phCal = const Value.absent(),
+    Value<double?> nCal = const Value.absent(),
+    Value<double?> pCal = const Value.absent(),
+    Value<double?> kCal = const Value.absent(),
     Value<int?> cropParamsId = const Value.absent(),
   }) => SensorReading(
     id: id ?? this.id,
@@ -933,6 +1082,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
     phosphorus: phosphorus ?? this.phosphorus,
     potassium: potassium ?? this.potassium,
     salinity: salinity ?? this.salinity,
+    ecCal: ecCal.present ? ecCal.value : this.ecCal,
+    phCal: phCal.present ? phCal.value : this.phCal,
+    nCal: nCal.present ? nCal.value : this.nCal,
+    pCal: pCal.present ? pCal.value : this.pCal,
+    kCal: kCal.present ? kCal.value : this.kCal,
     cropParamsId: cropParamsId.present ? cropParamsId.value : this.cropParamsId,
   );
   SensorReading copyWithCompanion(SensorReadingsCompanion data) {
@@ -951,6 +1105,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
           : this.phosphorus,
       potassium: data.potassium.present ? data.potassium.value : this.potassium,
       salinity: data.salinity.present ? data.salinity.value : this.salinity,
+      ecCal: data.ecCal.present ? data.ecCal.value : this.ecCal,
+      phCal: data.phCal.present ? data.phCal.value : this.phCal,
+      nCal: data.nCal.present ? data.nCal.value : this.nCal,
+      pCal: data.pCal.present ? data.pCal.value : this.pCal,
+      kCal: data.kCal.present ? data.kCal.value : this.kCal,
       cropParamsId: data.cropParamsId.present
           ? data.cropParamsId.value
           : this.cropParamsId,
@@ -970,6 +1129,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
           ..write('phosphorus: $phosphorus, ')
           ..write('potassium: $potassium, ')
           ..write('salinity: $salinity, ')
+          ..write('ecCal: $ecCal, ')
+          ..write('phCal: $phCal, ')
+          ..write('nCal: $nCal, ')
+          ..write('pCal: $pCal, ')
+          ..write('kCal: $kCal, ')
           ..write('cropParamsId: $cropParamsId')
           ..write(')'))
         .toString();
@@ -987,6 +1151,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
     phosphorus,
     potassium,
     salinity,
+    ecCal,
+    phCal,
+    nCal,
+    pCal,
+    kCal,
     cropParamsId,
   );
   @override
@@ -1003,6 +1172,11 @@ class SensorReading extends DataClass implements Insertable<SensorReading> {
           other.phosphorus == this.phosphorus &&
           other.potassium == this.potassium &&
           other.salinity == this.salinity &&
+          other.ecCal == this.ecCal &&
+          other.phCal == this.phCal &&
+          other.nCal == this.nCal &&
+          other.pCal == this.pCal &&
+          other.kCal == this.kCal &&
           other.cropParamsId == this.cropParamsId);
 }
 
@@ -1017,6 +1191,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
   final Value<int> phosphorus;
   final Value<int> potassium;
   final Value<double> salinity;
+  final Value<double?> ecCal;
+  final Value<double?> phCal;
+  final Value<double?> nCal;
+  final Value<double?> pCal;
+  final Value<double?> kCal;
   final Value<int?> cropParamsId;
   const SensorReadingsCompanion({
     this.id = const Value.absent(),
@@ -1029,6 +1208,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
     this.phosphorus = const Value.absent(),
     this.potassium = const Value.absent(),
     this.salinity = const Value.absent(),
+    this.ecCal = const Value.absent(),
+    this.phCal = const Value.absent(),
+    this.nCal = const Value.absent(),
+    this.pCal = const Value.absent(),
+    this.kCal = const Value.absent(),
     this.cropParamsId = const Value.absent(),
   });
   SensorReadingsCompanion.insert({
@@ -1042,6 +1226,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
     required int phosphorus,
     required int potassium,
     required double salinity,
+    this.ecCal = const Value.absent(),
+    this.phCal = const Value.absent(),
+    this.nCal = const Value.absent(),
+    this.pCal = const Value.absent(),
+    this.kCal = const Value.absent(),
     this.cropParamsId = const Value.absent(),
   }) : timestamp = Value(timestamp),
        moisture = Value(moisture),
@@ -1063,6 +1252,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
     Expression<int>? phosphorus,
     Expression<int>? potassium,
     Expression<double>? salinity,
+    Expression<double>? ecCal,
+    Expression<double>? phCal,
+    Expression<double>? nCal,
+    Expression<double>? pCal,
+    Expression<double>? kCal,
     Expression<int>? cropParamsId,
   }) {
     return RawValuesInsertable({
@@ -1076,6 +1270,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
       if (phosphorus != null) 'phosphorus': phosphorus,
       if (potassium != null) 'potassium': potassium,
       if (salinity != null) 'salinity': salinity,
+      if (ecCal != null) 'ec_cal': ecCal,
+      if (phCal != null) 'ph_cal': phCal,
+      if (nCal != null) 'n_cal': nCal,
+      if (pCal != null) 'p_cal': pCal,
+      if (kCal != null) 'k_cal': kCal,
       if (cropParamsId != null) 'crop_params_id': cropParamsId,
     });
   }
@@ -1091,6 +1290,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
     Value<int>? phosphorus,
     Value<int>? potassium,
     Value<double>? salinity,
+    Value<double?>? ecCal,
+    Value<double?>? phCal,
+    Value<double?>? nCal,
+    Value<double?>? pCal,
+    Value<double?>? kCal,
     Value<int?>? cropParamsId,
   }) {
     return SensorReadingsCompanion(
@@ -1104,6 +1308,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
       phosphorus: phosphorus ?? this.phosphorus,
       potassium: potassium ?? this.potassium,
       salinity: salinity ?? this.salinity,
+      ecCal: ecCal ?? this.ecCal,
+      phCal: phCal ?? this.phCal,
+      nCal: nCal ?? this.nCal,
+      pCal: pCal ?? this.pCal,
+      kCal: kCal ?? this.kCal,
       cropParamsId: cropParamsId ?? this.cropParamsId,
     );
   }
@@ -1141,6 +1350,21 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
     if (salinity.present) {
       map['salinity'] = Variable<double>(salinity.value);
     }
+    if (ecCal.present) {
+      map['ec_cal'] = Variable<double>(ecCal.value);
+    }
+    if (phCal.present) {
+      map['ph_cal'] = Variable<double>(phCal.value);
+    }
+    if (nCal.present) {
+      map['n_cal'] = Variable<double>(nCal.value);
+    }
+    if (pCal.present) {
+      map['p_cal'] = Variable<double>(pCal.value);
+    }
+    if (kCal.present) {
+      map['k_cal'] = Variable<double>(kCal.value);
+    }
     if (cropParamsId.present) {
       map['crop_params_id'] = Variable<int>(cropParamsId.value);
     }
@@ -1160,6 +1384,11 @@ class SensorReadingsCompanion extends UpdateCompanion<SensorReading> {
           ..write('phosphorus: $phosphorus, ')
           ..write('potassium: $potassium, ')
           ..write('salinity: $salinity, ')
+          ..write('ecCal: $ecCal, ')
+          ..write('phCal: $phCal, ')
+          ..write('nCal: $nCal, ')
+          ..write('pCal: $pCal, ')
+          ..write('kCal: $kCal, ')
           ..write('cropParamsId: $cropParamsId')
           ..write(')'))
         .toString();
@@ -2031,6 +2260,11 @@ typedef $$SensorReadingsTableCreateCompanionBuilder =
       required int phosphorus,
       required int potassium,
       required double salinity,
+      Value<double?> ecCal,
+      Value<double?> phCal,
+      Value<double?> nCal,
+      Value<double?> pCal,
+      Value<double?> kCal,
       Value<int?> cropParamsId,
     });
 typedef $$SensorReadingsTableUpdateCompanionBuilder =
@@ -2045,6 +2279,11 @@ typedef $$SensorReadingsTableUpdateCompanionBuilder =
       Value<int> phosphorus,
       Value<int> potassium,
       Value<double> salinity,
+      Value<double?> ecCal,
+      Value<double?> phCal,
+      Value<double?> nCal,
+      Value<double?> pCal,
+      Value<double?> kCal,
       Value<int?> cropParamsId,
     });
 
@@ -2135,6 +2374,31 @@ class $$SensorReadingsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<double> get ecCal => $composableBuilder(
+    column: $table.ecCal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get phCal => $composableBuilder(
+    column: $table.phCal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get nCal => $composableBuilder(
+    column: $table.nCal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get pCal => $composableBuilder(
+    column: $table.pCal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get kCal => $composableBuilder(
+    column: $table.kCal,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$CropParamsTableFilterComposer get cropParamsId {
     final $$CropParamsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -2218,6 +2482,31 @@ class $$SensorReadingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get ecCal => $composableBuilder(
+    column: $table.ecCal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get phCal => $composableBuilder(
+    column: $table.phCal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get nCal => $composableBuilder(
+    column: $table.nCal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get pCal => $composableBuilder(
+    column: $table.pCal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get kCal => $composableBuilder(
+    column: $table.kCal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CropParamsTableOrderingComposer get cropParamsId {
     final $$CropParamsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -2285,6 +2574,21 @@ class $$SensorReadingsTableAnnotationComposer
   GeneratedColumn<double> get salinity =>
       $composableBuilder(column: $table.salinity, builder: (column) => column);
 
+  GeneratedColumn<double> get ecCal =>
+      $composableBuilder(column: $table.ecCal, builder: (column) => column);
+
+  GeneratedColumn<double> get phCal =>
+      $composableBuilder(column: $table.phCal, builder: (column) => column);
+
+  GeneratedColumn<double> get nCal =>
+      $composableBuilder(column: $table.nCal, builder: (column) => column);
+
+  GeneratedColumn<double> get pCal =>
+      $composableBuilder(column: $table.pCal, builder: (column) => column);
+
+  GeneratedColumn<double> get kCal =>
+      $composableBuilder(column: $table.kCal, builder: (column) => column);
+
   $$CropParamsTableAnnotationComposer get cropParamsId {
     final $$CropParamsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -2349,6 +2653,11 @@ class $$SensorReadingsTableTableManager
                 Value<int> phosphorus = const Value.absent(),
                 Value<int> potassium = const Value.absent(),
                 Value<double> salinity = const Value.absent(),
+                Value<double?> ecCal = const Value.absent(),
+                Value<double?> phCal = const Value.absent(),
+                Value<double?> nCal = const Value.absent(),
+                Value<double?> pCal = const Value.absent(),
+                Value<double?> kCal = const Value.absent(),
                 Value<int?> cropParamsId = const Value.absent(),
               }) => SensorReadingsCompanion(
                 id: id,
@@ -2361,6 +2670,11 @@ class $$SensorReadingsTableTableManager
                 phosphorus: phosphorus,
                 potassium: potassium,
                 salinity: salinity,
+                ecCal: ecCal,
+                phCal: phCal,
+                nCal: nCal,
+                pCal: pCal,
+                kCal: kCal,
                 cropParamsId: cropParamsId,
               ),
           createCompanionCallback:
@@ -2375,6 +2689,11 @@ class $$SensorReadingsTableTableManager
                 required int phosphorus,
                 required int potassium,
                 required double salinity,
+                Value<double?> ecCal = const Value.absent(),
+                Value<double?> phCal = const Value.absent(),
+                Value<double?> nCal = const Value.absent(),
+                Value<double?> pCal = const Value.absent(),
+                Value<double?> kCal = const Value.absent(),
                 Value<int?> cropParamsId = const Value.absent(),
               }) => SensorReadingsCompanion.insert(
                 id: id,
@@ -2387,6 +2706,11 @@ class $$SensorReadingsTableTableManager
                 phosphorus: phosphorus,
                 potassium: potassium,
                 salinity: salinity,
+                ecCal: ecCal,
+                phCal: phCal,
+                nCal: nCal,
+                pCal: pCal,
+                kCal: kCal,
                 cropParamsId: cropParamsId,
               ),
           withReferenceMapper: (p0) => p0

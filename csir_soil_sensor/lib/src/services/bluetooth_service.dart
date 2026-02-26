@@ -454,6 +454,21 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
           phosphorus: reading.phosphorus,
           potassium: reading.potassium,
           salinity: reading.salinity,
+          ecCal: reading.ecCal != null
+              ? drift.Value(reading.ecCal!)
+              : const drift.Value.absent(),
+          phCal: reading.phCal != null
+              ? drift.Value(reading.phCal!)
+              : const drift.Value.absent(),
+          nCal: reading.nCal != null
+              ? drift.Value(reading.nCal!)
+              : const drift.Value.absent(),
+          pCal: reading.pCal != null
+              ? drift.Value(reading.pCal!)
+              : const drift.Value.absent(),
+          kCal: reading.kCal != null
+              ? drift.Value(reading.kCal!)
+              : const drift.Value.absent(),
           cropParamsId: _activeCropParamsId != null
               ? drift.Value(_activeCropParamsId!)
               : const drift.Value.absent(),
