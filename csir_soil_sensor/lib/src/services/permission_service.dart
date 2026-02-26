@@ -3,6 +3,12 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+enum StoragePermissionState {
+  granted,
+  denied,
+  permanentlyDenied,
+}
+
 enum BlePermissionState {
   granted,
   denied,
@@ -11,19 +17,48 @@ enum BlePermissionState {
 
 /// Central place to request/check permissions needed by the app.
 class PermissionService {
-  Future<bool> ensureStoragePermission() async {
+  Future<StoragePermissionState> ensureStoragePermission() async {
     // On iOS we only write into app sandbox via path_provider, which does not
     // require an extra storage permission. Let the OS handle Photos/Camera
     // when image_picker is used.
     if (Platform.isIOS) {
-      return true;
+      return StoragePermissionState.granted;
     }
 
-    final status = await Permission.storage.status;
-    if (status.isGranted) return true;
+    if (!Platform.isAndroid) {
+      // Other platforms (web, desktop) currently don't require special handling.
+      return StoragePermissionState.granted;
+    }
 
-    final result = await Permission.storage.request();
-    return result.isGranted;
+    // Lightweight SDK detection without extra dependencies.
+    final osVersion = Platform.operatingSystemVersion; // e.g. "Android 14 (UP1A...)"
+    final match = RegExp(r'Android\s+(\d+)').firstMatch(osVersion);
+    final sdkInt = match != null ? int.tryParse(match.group(1)!) : null;
+
+    final statuses = <Permission, PermissionStatus>{};
+
+    if (sdkInt != null && sdkInt >= 33) {
+      // Android 13+: use dedicated media permissions.
+      // This app exports/reads images (crop photos), so request photos/media.
+      final photosStatus = await Permission.photos.request();
+      statuses[Permission.photos] = photosStatus;
+    } else {
+      // Android 12 and below:
+      // READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE are represented by storage.
+      final storageStatus = await Permission.storage.request();
+      statuses[Permission.storage] = storageStatus;
+    }
+
+    final anyPermanentlyDenied =
+        statuses.values.any((s) => s.isPermanentlyDenied);
+    if (anyPermanentlyDenied) {
+      return StoragePermissionState.permanentlyDenied;
+    }
+
+    final allGranted = statuses.values.every((s) => s.isGranted);
+    return allGranted
+        ? StoragePermissionState.granted
+        : StoragePermissionState.denied;
   }
 
   /// Requests permissions needed to scan/connect over BLE.

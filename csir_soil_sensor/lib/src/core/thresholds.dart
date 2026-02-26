@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 
-/// Threshold ranges for tomato growing (ideal ranges based on agricultural standards).
+/// Threshold ranges for Crop growing (ideal ranges based on agricultural standards).
 /// Used to color-code sensor readings: green (ideal), amber (acceptable), red (needs attention).
-class TomatoThresholds {
-  // Moisture: 30-50% is ideal for tomatoes
+class CropThresholds {
+  // Moisture: 30-50% is ideal for Cropes
   static const double moistureLow = 30.0;
   static const double moistureHigh = 50.0;
   static const String moistureTooltip =
       'Soil moisture. Ideal: 30-50%. Too low: plants stress. Too high: root rot risk.';
 
-  // EC (Electrical Conductivity): 1.5-2.5 mS/cm ideal for tomatoes
+  // EC (Electrical Conductivity): 1.5-2.5 mS/cm ideal for Cropes
   static const double ecLow = 1.5;
   static const double ecHigh = 2.5;
   static const String ecTooltip =
       'Electrical Conductivity measures dissolved salts. Ideal: 1.5-2.5 mS/cm. Higher = more nutrients/salts.';
 
-  // Temperature: 20-30°C ideal for tomato growth
+  // Temperature: 20-30°C ideal for Crop growth
   static const double temperatureLow = 20.0;
   static const double temperatureHigh = 30.0;
   static const String temperatureTooltip =
       'Soil temperature. Ideal: 20-30°C. Too cold: slow growth. Too hot: stress.';
 
-  // pH: 6.0-7.0 ideal for tomatoes (slightly acidic to neutral)
+  // pH: 6.0-7.0 ideal for Cropes (slightly acidic to neutral)
   static const double phLow = 6.0;
   static const double phHigh = 7.0;
   static const String phTooltip =

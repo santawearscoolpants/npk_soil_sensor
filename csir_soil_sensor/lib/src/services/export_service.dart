@@ -235,7 +235,7 @@ class LocalExportService implements ExportService {
         build: (context) {
           final widgets = <pw.Widget>[
             pw.Text(
-              'Tomato Soil Sensor Report',
+              'Crop Soil Sensor Report',
               style: pw.TextStyle(
                 fontSize: 20,
                 fontWeight: pw.FontWeight.bold,

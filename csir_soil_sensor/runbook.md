@@ -41,7 +41,7 @@
 3. Add images of the crop:
    - Tap **Camera** to capture a new photo, or
    - Tap **Gallery** to pick an existing photo.
-   - Images are automatically relabeled as `tomato_001.jpg`, `tomato_002.jpg`, etc.
+   - Images are automatically relabeled as `Crop_001.jpg`, `Crop_002.jpg`, etc.
 4. Tap **"Save parameters"**:
    - The app stores a new `CropParams` record.
    - Images are copied into app storage with sequential filenames.

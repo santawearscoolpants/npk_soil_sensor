@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../services/permission_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 final _cropRepoProvider = Provider<CropRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -67,8 +68,37 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
     // Ensure we have permission to write files before proceeding.
     final permissionService = ref.read(permissionServiceProvider);
-    final allowed = await permissionService.ensureStoragePermission();
-    if (!allowed) {
+    final storagePerm = await permissionService.ensureStoragePermission();
+    if (storagePerm == StoragePermissionState.permanentlyDenied) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Storage Permission Needed'),
+            content: const Text(
+              'Storage permission was permanently denied. Please enable it in system Settings to save crop photos and data.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await openAppSettings();
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    if (storagePerm != StoragePermissionState.granted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -126,9 +156,9 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         final allImages = await repo.getAllImages();
         int maxImageNumber = 0;
         for (final img in allImages) {
-          // Extract number from filename like "tomato_001.jpg"
+          // Extract number from filename like "Crop_001.jpg"
           final match =
-              RegExp(r'tomato_(\d+)').firstMatch(img.relabelledFileName);
+              RegExp(r'Crop_(\d+)').firstMatch(img.relabelledFileName);
           if (match != null) {
             final num = int.tryParse(match.group(1) ?? '0') ?? 0;
             if (num > maxImageNumber) {
@@ -141,7 +171,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         final nextNumber = maxImageNumber + 1;
         final imageExtension = p.extension(_selectedImage!.path);
         final fileName =
-            'tomato_${nextNumber.toString().padLeft(3, '0')}$imageExtension';
+            'Crop_${nextNumber.toString().padLeft(3, '0')}$imageExtension';
         final destPath = p.join(imagesDir.path, fileName);
         final savedFile = await _selectedImage!.copy(destPath);
 
@@ -182,8 +212,8 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         SnackBar(
           content: Text(
             wasEditing
-                ? 'Tomato parameters updated'
-                : 'Tomato parameters saved',
+                ? 'Crop parameters updated'
+                : 'Crop parameters saved',
           ),
         ),
       );
@@ -206,7 +236,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
     return SafeArea(
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Tomato Parameters'),
+          title: const Text('Crop Parameters'),
         ),
         body: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -417,7 +447,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete parameters?'),
         content: Text(
-          'This will delete tomato set #${item.id} and its images.',
+          'This will delete Crop set #${item.id} and its images.',
         ),
         actions: [
           TextButton(
@@ -621,7 +651,7 @@ class _CropParamsHistorySection extends ConsumerWidget {
                         )
                       : null,
                   title: Text(
-                    'Tomato set #${item.id}',
+                    'Crop set #${item.id}',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(

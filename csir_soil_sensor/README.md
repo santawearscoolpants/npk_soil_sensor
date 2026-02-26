@@ -153,7 +153,7 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
    - Stem size (cm)
    - Plant height (cm)
    - Notes (optional)
-3. Upload images (automatically relabeled as `tomato_001.jpg`, `tomato_002.jpg`, etc.)
+3. Upload images (automatically relabeled as `Crop_001.jpg`, `Crop_002.jpg`, etc.)
 4. Tap **"Save parameters"** to create a new parameter set
 5. **Manage saved sets**:
    - Edit: Tap the edit icon to modify an existing set
@@ -172,7 +172,7 @@ The app requires Bluetooth permissions on iOS. Add these to `ios/Runner/Info.pli
    - Your selected tab persists when navigating away and returning
    - Interactive charts show trends over time with touch tooltips
    - Multi-session comparison mode overlays multiple sessions with color-coded legend
-   - Threshold guides for each sensor (tomato defaults) shown as dashed lines plus ideal-range callouts
+   - Threshold guides for each sensor (Crop defaults) shown as dashed lines plus ideal-range callouts
    - Charts only display data from saved sessions (no live updates)
 
 ### Data Export

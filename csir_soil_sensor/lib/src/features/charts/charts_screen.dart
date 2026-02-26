@@ -178,51 +178,51 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     switch (chartIndex) {
       case 1: // Moisture
         return (
-          low: TomatoThresholds.moistureLow,
-          high: TomatoThresholds.moistureHigh,
-          info: 'Ideal: ${TomatoThresholds.moistureLow}-${TomatoThresholds.moistureHigh}%'
+          low: CropThresholds.moistureLow,
+          high: CropThresholds.moistureHigh,
+          info: 'Ideal: ${CropThresholds.moistureLow}-${CropThresholds.moistureHigh}%'
         );
       case 2: // EC
         return (
-          low: TomatoThresholds.ecLow,
-          high: TomatoThresholds.ecHigh,
-          info: 'Ideal: ${TomatoThresholds.ecLow}-${TomatoThresholds.ecHigh} mS/cm'
+          low: CropThresholds.ecLow,
+          high: CropThresholds.ecHigh,
+          info: 'Ideal: ${CropThresholds.ecLow}-${CropThresholds.ecHigh} mS/cm'
         );
       case 3: // Temperature
         return (
-          low: TomatoThresholds.temperatureLow,
-          high: TomatoThresholds.temperatureHigh,
-          info: 'Ideal: ${TomatoThresholds.temperatureLow}-${TomatoThresholds.temperatureHigh}°C'
+          low: CropThresholds.temperatureLow,
+          high: CropThresholds.temperatureHigh,
+          info: 'Ideal: ${CropThresholds.temperatureLow}-${CropThresholds.temperatureHigh}°C'
         );
       case 4: // pH
         return (
-          low: TomatoThresholds.phLow,
-          high: TomatoThresholds.phHigh,
-          info: 'Ideal: ${TomatoThresholds.phLow}-${TomatoThresholds.phHigh}'
+          low: CropThresholds.phLow,
+          high: CropThresholds.phHigh,
+          info: 'Ideal: ${CropThresholds.phLow}-${CropThresholds.phHigh}'
         );
       case 5: // Nitrogen
         return (
-          low: TomatoThresholds.nitrogenLow,
-          high: TomatoThresholds.nitrogenHigh,
-          info: 'Ideal: ${TomatoThresholds.nitrogenLow}-${TomatoThresholds.nitrogenHigh} ppm'
+          low: CropThresholds.nitrogenLow,
+          high: CropThresholds.nitrogenHigh,
+          info: 'Ideal: ${CropThresholds.nitrogenLow}-${CropThresholds.nitrogenHigh} ppm'
         );
       case 6: // Phosphorus
         return (
-          low: TomatoThresholds.phosphorusLow,
-          high: TomatoThresholds.phosphorusHigh,
-          info: 'Ideal: ${TomatoThresholds.phosphorusLow}-${TomatoThresholds.phosphorusHigh} ppm'
+          low: CropThresholds.phosphorusLow,
+          high: CropThresholds.phosphorusHigh,
+          info: 'Ideal: ${CropThresholds.phosphorusLow}-${CropThresholds.phosphorusHigh} ppm'
         );
       case 7: // Potassium
         return (
-          low: TomatoThresholds.potassiumLow,
-          high: TomatoThresholds.potassiumHigh,
-          info: 'Ideal: ${TomatoThresholds.potassiumLow}-${TomatoThresholds.potassiumHigh} ppm'
+          low: CropThresholds.potassiumLow,
+          high: CropThresholds.potassiumHigh,
+          info: 'Ideal: ${CropThresholds.potassiumLow}-${CropThresholds.potassiumHigh} ppm'
         );
       case 8: // Salinity
         return (
-          low: TomatoThresholds.salinityLow,
-          high: TomatoThresholds.salinityHigh,
-          info: 'Ideal: ${TomatoThresholds.salinityLow}-${TomatoThresholds.salinityHigh} g/L'
+          low: CropThresholds.salinityLow,
+          high: CropThresholds.salinityHigh,
+          info: 'Ideal: ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} g/L'
         );
       default:
         return (low: 0, high: 0, info: '');
