@@ -2,6 +2,7 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include <BLE2902.h>
+#include <esp_bt.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
@@ -19,6 +20,8 @@ bool deviceConnected = false;
 // Sensor data update interval (milliseconds)
 const unsigned long UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 unsigned long lastUpdateTime = 0;
+const unsigned long SENSOR_READ_INTERVAL = 1000; // Read and refresh once per second
+unsigned long lastSensorReadTime = 0;
 
 // ============ TFT DISPLAY ===========================================
 #define TFT_CS   5    // CS
@@ -297,6 +300,7 @@ void setup() {
   // --- BLE setup ---
   // 1. Initialize BLE device (name appears in BLE apps on Android & iOS)
   BLEDevice::init("ESP32_BLE_TEST");
+  BLEDevice::setPower(ESP_PWR_LVL_N12); // Lower TX power to reduce current spikes
 
   // 2. Create BLE server
   pServer = BLEDevice::createServer();
@@ -340,6 +344,7 @@ void setup() {
 }
 
 void loop() {
+  // Read sensor data from Modbus
   uint8_t result = node.readHoldingRegisters(0x0000, 9);
   char line[48];
   clearTftDataArea();
