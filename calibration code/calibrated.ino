@@ -6,14 +6,23 @@
 
 // ============ TFT DISPLAY ============
 #define TFT_CS   5
+<<<<<<< HEAD
 #define TFT_DC   27
 #define TFT_RST  26  
+=======
+#define TFT_DC   4
+#define TFT_RST  2  
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 #define TFT_SCLK 18
 #define TFT_MISO 19
 #define TFT_MOSI 23
 #define TFT_INITR_TAB INITR_BLACKTAB
 
+<<<<<<< HEAD
 #define TFT_DATA_Y 14
+=======
+#define TFT_DATA_Y 14 
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 #define TFT_LINE_H 14
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
@@ -64,6 +73,7 @@ static inline float k_mgkg_to_cmolkg(float k_mgkg) {
   return k_mgkg / 391.0f;
 }
 
+<<<<<<< HEAD
 // Custom dark green color for table separators (RGB565: 0x03E0)
 #define DARK_GREEN 0x03E0
 
@@ -104,10 +114,14 @@ void drawTableHeader() {
 
 // Draw table title
 void drawTftHead() {
+=======
+void drawTftHeader() {
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(1);
   tft.setCursor(0, 0);
   tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+<<<<<<< HEAD
   tft.print("    LSACROFT SOIL SENSOR");
 }
 
@@ -151,6 +165,18 @@ void drawTableSeparators() {
   drawTableVLine(TABLE_COL2_X);
   drawTableVLine(TABLE_COL3_X);
   drawTableVLine(TABLE_COL4_X);
+=======
+  tft.println("R/CALC/CALIB");
+}
+
+
+void writeTftLine(uint8_t lineIndex, uint16_t color, const char* text) {
+  const int y = TFT_DATA_Y + lineIndex * TFT_LINE_H;
+  tft.fillRect(0, y, tft.width(), TFT_LINE_H, ST77XX_BLACK);
+  tft.setCursor(0, y);
+  tft.setTextColor(color, ST77XX_BLACK);
+  tft.print(text);
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 }
 
 void setup() {
@@ -171,12 +197,17 @@ void setup() {
   tft.fillScreen(ST77XX_BLUE);
   delay(200);
 
+<<<<<<< HEAD
   // Display boot message
   drawTftHead();
   tft.setTextSize(1);
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
   tft.setCursor(0, TABLE_HEADER_Y + 5);
   tft.print("Booting sensor...");
+=======
+  drawTftHeader();
+  writeTftLine(0, ST77XX_WHITE, "Booting sensor...");
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 
   pinMode(RE_DE_PIN, OUTPUT);
   digitalWrite(RE_DE_PIN, LOW);
@@ -193,7 +224,11 @@ void setup() {
 void loop() {
   uint8_t result = node.readHoldingRegisters(0x0000, 9);
   char line[48];
+<<<<<<< HEAD
   clearTftDataArea();
+=======
+  
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 
   if (result == node.ku8MBSuccess) {
     uint16_t raw[9];
@@ -249,6 +284,7 @@ void loop() {
 
     Serial.println("================================================");
 
+<<<<<<< HEAD
     // ===== TFT OUTPUT (organized table format) =====
     drawTftHead();
     drawTableHeader();
@@ -309,10 +345,31 @@ void loop() {
     snprintf(convStr, sizeof(convStr), "%.3f", k_sensor);
     snprintf(calibStr, sizeof(calibStr), "%.3f", k_std);
     drawTableRow(8, "K", ST77XX_WHITE, rawStr, convStr, calibStr);
+=======
+    // ===== TFT OUTPUT (show RAW -> CONVERTED -> CALIBRATED) =====
+    snprintf(line, sizeof(line), "T:%5.1fC M:%5.1f%%", temp, moisture);
+    writeTftLine(0, ST77XX_YELLOW, line);
+
+    snprintf(line, sizeof(line), "EC %.0f/%.2f/%.2f", ec_raw_uScm, ec_sensor, ec_std);
+    writeTftLine(1, ST77XX_WHITE, line);
+
+    snprintf(line, sizeof(line), "pH %.1f/%.1f/%.1f", ph_raw, ph_sensor, ph_std);
+    writeTftLine(2, ST77XX_WHITE, line);
+
+    snprintf(line, sizeof(line), "N  %.0f/%.4f/%.4f", n_raw_mgkg, n_sensor, n_std);
+    writeTftLine(3, ST77XX_WHITE, line);
+
+    snprintf(line, sizeof(line), "P  %.0f/%.1f/%.1f", p_raw_mgkg, p_sensor, p_std);
+    writeTftLine(4, ST77XX_WHITE, line);
+
+    snprintf(line, sizeof(line), "K  %.0f/%.3f/%.3f", k_raw_mgkg, k_sensor, k_std);
+    writeTftLine(5, ST77XX_WHITE, line);
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
 
   } else {
     Serial.print("Modbus Error: ");
     Serial.println(result);
+<<<<<<< HEAD
     
     // Display error on TFT
     drawTftHead();
@@ -323,6 +380,11 @@ void loop() {
     snprintf(line, sizeof(line), "Code: %d", result);
     tft.setCursor(0, TABLE_HEADER_Y + TABLE_ROW_H + 5);
     tft.print(line);
+=======
+    writeTftLine(0, ST77XX_RED, "Modbus Error");
+    snprintf(line, sizeof(line), "Code: %d", result);
+    writeTftLine(1, ST77XX_RED, line);
+>>>>>>> b2e04a7 (Refactor TFT display handling and improve data output formatting in calibration code)
   }
 
   delay(1500);

@@ -12,7 +12,7 @@
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // ============ RS485 / NPK SENSOR ================================
-#define RE_DE_PIN 21   // moved from 4 to 21
+#define RE_DE_PIN 4   // moved from 4 to 21
 #define RS485_RX  17
 #define RS485_TX  16
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/db/app_database.dart';
 import '../data/repositories/sensor_repository.dart';
 import 'bluetooth_constants.dart';
+import 'permission_service.dart';
 import 'session_store.dart';
 
 class LiveReading {
@@ -131,11 +133,12 @@ class BluetoothStateModel {
 }
 
 class BluetoothService extends StateNotifier<BluetoothStateModel> {
-  BluetoothService(this._sensorRepository, this._sessionStore)
+  BluetoothService(this._sensorRepository, this._sessionStore, this._permissionService)
       : super(const BluetoothStateModel(connectionStatus: 'Disconnected'));
 
   final SensorRepository _sensorRepository;
   final SessionStore _sessionStore;
+  final PermissionService _permissionService;
 
   BluetoothDevice? _connectedDevice;
   // ignore: unused_field
@@ -189,17 +192,39 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
 
   Future<void> scanForDevices() async {
     try {
+      // Ensure permissions first (Android requires runtime permissions)
+      final perm = await _permissionService.ensureBluetoothPermissions();
+      if (perm != BlePermissionState.granted) {
+        state = state.copyWith(
+          connectionStatus: perm == BlePermissionState.permanentlyDenied
+              ? 'Bluetooth permission permanently denied. Enable it in Settings.'
+              : 'Bluetooth permission denied. Please allow to scan.',
+          devices: [],
+        );
+        return;
+      }
+
       // If already connected, keep status but allow a fresh scan if user wants.
       // Cancel any previous scan subscriptions to avoid stale results.
       await _cancelScan();
 
       final adapterState = await FlutterBluePlus.adapterState.first;
       if (adapterState != BluetoothAdapterState.on) {
-        state = state.copyWith(
-          connectionStatus: 'Bluetooth is off. Please turn it on.',
-          devices: [],
-        );
-        return;
+        // On Android, prompt the system dialog to enable Bluetooth.
+        if (Platform.isAndroid) {
+          try {
+            await FlutterBluePlus.turnOn();
+          } catch (_) {}
+        }
+
+        final newState = await FlutterBluePlus.adapterState.first;
+        if (newState != BluetoothAdapterState.on) {
+          state = state.copyWith(
+            connectionStatus: 'Bluetooth is off. Please turn it on.',
+            devices: [],
+          );
+          return;
+        }
       }
 
       state = state.copyWith(
@@ -547,7 +572,8 @@ final bluetoothServiceProvider =
   final db = ref.watch(appDatabaseProvider);
   final repo = SensorRepository(db);
   final sessions = ref.read(sessionStoreProvider);
-  return BluetoothService(repo, sessions);
+  final permissions = ref.read(permissionServiceProvider);
+  return BluetoothService(repo, sessions, permissions);
 });
 
 
