@@ -19,6 +19,7 @@ class SensorReadings extends Table {
   IntColumn get phosphorus => integer()();
   IntColumn get potassium => integer()();
   RealColumn get salinity => real()();
+  RealColumn get tds => real()();
   // Calibrated values (persisted for charts/exports)
   RealColumn get ecCal => real().nullable()();  // dS/m
   RealColumn get phCal => real().nullable()();  // pH
@@ -57,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor) : super();
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -70,6 +71,10 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(sensorReadings, sensorReadings.pCal);
             await m.addColumn(sensorReadings, sensorReadings.kCal);
           }
+          // if (from < 3) {
+          //   // Add TDS column; existing rows get NULLs.
+          //   await m.addColumn(sensorReadings, sensorReadings.tds);
+          // }
         },
       );
 }

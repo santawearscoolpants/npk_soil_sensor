@@ -454,6 +454,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
           phosphorus: reading.phosphorus,
           potassium: reading.potassium,
           salinity: reading.salinity,
+          tds: drift.Value(reading.tds.toDouble()),
           ecCal: reading.ecCal != null
               ? drift.Value(reading.ecCal!)
               : const drift.Value.absent(),

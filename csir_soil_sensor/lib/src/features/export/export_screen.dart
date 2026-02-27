@@ -623,6 +623,85 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           _busy = false;
         });
       }
+
+  Future<void> _exportAll() async {
+    setState(() {
+      _busy = true;
+      _status = 'Exporting all data...';
+    });
+
+    try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final storagePerm = await permissionService.ensureStoragePermission();
+      if (storagePerm == StoragePermissionState.permanentlyDenied) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Storage Permission Needed'),
+            content: const Text(
+              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await openAppSettings();
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      if (storagePerm != StoragePermissionState.granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission is required to export files.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 1) Export combined CSV (sensor + parameters)
+      final exportService = ref.read(exportServiceProvider);
+      await exportService.exportCombinedCsv(
+        readingIds: _selectedReadingIds(),
+      );
+
+      // 2) Export charts (PDF with chart images)
+      await _exportCharts();
+
+      if (mounted) {
+        setState(() {
+          _status = 'All data exported.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Error exporting all data: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
     }
   }
 
@@ -980,6 +1059,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   onPressed: _busy ? null : _exportCharts,
                   icon: const Icon(Icons.show_chart),
                   label: const Text('Export Charts (PDF)'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _busy ? null : _exportAll,
+                  icon: const Icon(Icons.all_inbox),
+                  label: const Text('Export All'),
                 ),
               ),
               const SizedBox(height: 12),

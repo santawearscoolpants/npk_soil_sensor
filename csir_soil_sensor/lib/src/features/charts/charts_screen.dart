@@ -169,6 +169,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       'Phosphorus',
       'Potassium',
       'Salinity',
+      'TDS',
     ];
     return chartNames[chartIndex];
   }
@@ -223,6 +224,12 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           low: CropThresholds.salinityLow,
           high: CropThresholds.salinityHigh,
           info: 'Ideal: ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} g/L'
+        );
+      case 9: // TDS - reuse salinity thresholds as an approximation
+        return (
+          low: CropThresholds.salinityLow,
+          high: CropThresholds.salinityHigh,
+          info: 'Ideal (approx): ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} ppm'
         );
       default:
         return (low: 0, high: 0, info: '');
@@ -682,6 +689,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Tab(text: 'Phosphorus'),
             Tab(text: 'Potassium'),
             Tab(text: 'Salinity'),
+            Tab(text: 'TDS'),
           ],
         ),
         actions: [
@@ -1048,7 +1056,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   // Sample data for performance if needed
                   final displayReadings = _sampleDataIfNeeded(sortedReadings);
 
-                    return TabBarView(
+                  return TabBarView(
                     controller: _tabController,
                     children: [
                       _buildAllChartsView(displayReadings, originalCount: sortedReadings.length),
@@ -1122,6 +1130,15 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'g/L',
                         (r) => r.salinity,
                         Colors.cyan,
+                        originalCount: sortedReadings.length,
+                      ),
+                      _buildChart(
+                        displayReadings,
+                        9,
+                        'TDS',
+                        'ppm',
+                        (r) => r.tds,
+                        Colors.deepPurple,
                         originalCount: sortedReadings.length,
                       ),
                     ],
@@ -1512,6 +1529,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             'g/L',
             (r) => r.salinity,
             Colors.cyan,
+          ),
+          const SizedBox(height: 24),
+          _buildCompactChart(
+            readings,
+            'TDS',
+            'ppm',
+            (r) => (r.tds ?? 0).toDouble(),
+            Colors.deepPurple,
           ),
         ],
       ),
