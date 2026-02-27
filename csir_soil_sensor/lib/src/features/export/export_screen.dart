@@ -704,8 +704,6 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       }
     }
   }
-    }
-  }
 
   Future<ui.Image?> _captureChartWidget(
     List<SensorReading> readings,
