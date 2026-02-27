@@ -30,35 +30,34 @@ class PermissionService {
       return StoragePermissionState.granted;
     }
 
-    // Lightweight SDK detection without extra dependencies.
-    final osVersion = Platform.operatingSystemVersion; // e.g. "Android 14 (UP1A...)"
-    final match = RegExp(r'Android\s+(\d+)').firstMatch(osVersion);
-    final sdkInt = match != null ? int.tryParse(match.group(1)!) : null;
+    // First, check existing status to avoid unnecessary prompts.
+    final photosStatus = await Permission.photos.status;
+    final storageStatus = await Permission.storage.status;
 
-    final statuses = <Permission, PermissionStatus>{};
-
-    if (sdkInt != null && sdkInt >= 33) {
-      // Android 13+: use dedicated media permissions.
-      // This app exports/reads images (crop photos), so request photos/media.
-      final photosStatus = await Permission.photos.request();
-      statuses[Permission.photos] = photosStatus;
-    } else {
-      // Android 12 and below:
-      // READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE are represented by storage.
-      final storageStatus = await Permission.storage.request();
-      statuses[Permission.storage] = storageStatus;
+    if (photosStatus.isGranted || storageStatus.isGranted) {
+      return StoragePermissionState.granted;
     }
 
-    final anyPermanentlyDenied =
-        statuses.values.any((s) => s.isPermanentlyDenied);
-    if (anyPermanentlyDenied) {
+    if (photosStatus.isPermanentlyDenied || storageStatus.isPermanentlyDenied) {
       return StoragePermissionState.permanentlyDenied;
     }
 
-    final allGranted = statuses.values.every((s) => s.isGranted);
-    return allGranted
-        ? StoragePermissionState.granted
-        : StoragePermissionState.denied;
+    // Request media/storage access. On Android 13+ Permission.photos maps to
+    // READ_MEDIA_IMAGES; on older versions Permission.storage maps to
+    // READ/WRITE_EXTERNAL_STORAGE where applicable.
+    final newPhotosStatus = await Permission.photos.request();
+    final newStorageStatus = await Permission.storage.request();
+
+    if (newPhotosStatus.isGranted || newStorageStatus.isGranted) {
+      return StoragePermissionState.granted;
+    }
+
+    if (newPhotosStatus.isPermanentlyDenied ||
+        newStorageStatus.isPermanentlyDenied) {
+      return StoragePermissionState.permanentlyDenied;
+    }
+
+    return StoragePermissionState.denied;
   }
 
   /// Requests permissions needed to scan/connect over BLE.
