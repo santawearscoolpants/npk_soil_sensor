@@ -623,6 +623,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           _busy = false;
         });
       }
+    }
+  }
 
   Future<void> _exportAll() async {
     setState(() {
