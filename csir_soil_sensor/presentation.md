@@ -25,7 +25,7 @@
 - Session management: history, summaries, crop links, deletion
 - Interactive charts: per-sensor tabs, persisted tab selection
   - Multi-session overlay with color legend
-  - Threshold guides (tomato defaults) as dashed lines + ideal-range hints
+  - Threshold guides (Crop defaults) as dashed lines + ideal-range hints
   - Chart export to PDF
 - Crop parameters: soil traits, height, stem size, leaf color, notes, images
 - Exports: CSV (sensors, sensors+params, crop params), PDF reports, images
@@ -61,7 +61,7 @@
 - Build: `flutter pub get` → `flutter run`; `pod install` inside `ios/` for iOS
 
 ## Extensibility
-- Swap threshold profiles per crop (Tomato defaults provided)
+- Swap threshold profiles per crop (Crop defaults provided)
 - Add cloud sync/analytics without changing on-device model
 - Extend sensor set (e.g., light, CO₂) by updating schema + payload parser
 

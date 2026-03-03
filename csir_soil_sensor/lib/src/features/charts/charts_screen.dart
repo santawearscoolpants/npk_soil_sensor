@@ -16,8 +16,9 @@ import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
 import '../../core/thresholds.dart';
 
-final _sessionsProvider =
-    FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
+final _sessionsProvider = FutureProvider.autoDispose<List<ReadingSession>>((
+  ref,
+) async {
   final sessionStore = ref.read(sessionStoreProvider);
   return sessionStore.loadSessions();
 });
@@ -32,46 +33,48 @@ final _selectedChartTabIndexProvider = StateProvider<int>((ref) => 0);
 final _comparisonSessionIdsProvider = StateProvider<List<int>>((ref) => []);
 
 // Provider for comparison readings - returns readings grouped by session
-final _comparisonReadingsProvider = FutureProvider.autoDispose<Map<int, List<SensorReading>>>((ref) async {
-  final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
-  if (comparisonIds.isEmpty) return {};
-  
-  final sessions = await ref.watch(_sessionsProvider.future);
-  final sensorRepo = ref.read(sensorRepoProvider);
-  final sessionReadings = <int, List<SensorReading>>{};
-  
-  for (final sessionId in comparisonIds) {
-    final session = sessions.firstWhere(
-      (s) => s.id == sessionId,
-      orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
-    );
-    if (session.id != -1 && session.readingIds.isNotEmpty) {
-      // Limit readings per session to prevent performance issues
-      final limitedIds = session.readingIds.length > 5000 
-          ? session.readingIds.take(5000).toList()
-          : session.readingIds;
-      final readings = await sensorRepo.getReadingsByIds(limitedIds);
-      if (readings.isNotEmpty) {
-        sessionReadings[session.id] = readings;
+final _comparisonReadingsProvider =
+    FutureProvider.autoDispose<Map<int, List<SensorReading>>>((ref) async {
+      final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
+      if (comparisonIds.isEmpty) return {};
+
+      final sessions = await ref.watch(_sessionsProvider.future);
+      final sensorRepo = ref.read(sensorRepoProvider);
+      final sessionReadings = <int, List<SensorReading>>{};
+
+      for (final sessionId in comparisonIds) {
+        final session = sessions.firstWhere(
+          (s) => s.id == sessionId,
+          orElse: () =>
+              ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+        );
+        if (session.id != -1 && session.readingIds.isNotEmpty) {
+          // Limit readings per session to prevent performance issues
+          final limitedIds = session.readingIds.length > 5000
+              ? session.readingIds.take(5000).toList()
+              : session.readingIds;
+          final readings = await sensorRepo.getReadingsByIds(limitedIds);
+          if (readings.isNotEmpty) {
+            sessionReadings[session.id] = readings;
+          }
+        }
       }
-    }
-  }
-  
-  return sessionReadings;
-});
+
+      return sessionReadings;
+    });
 
 // Export the provider so it can be invalidated from other screens
 final readingsProvider = FutureProvider.family
     .autoDispose<List<SensorReading>, List<int>?>((ref, readingIds) async {
-  // Watch sessions provider so readings refresh when sessions change
-  ref.watch(_sessionsProvider);
-  
-  final sensorRepo = ref.read(sensorRepoProvider);
-  if (readingIds == null) {
-    return await sensorRepo.getAllReadings();
-  }
-  return await sensorRepo.getReadingsByIds(readingIds);
-});
+      // Watch sessions provider so readings refresh when sessions change
+      ref.watch(_sessionsProvider);
+
+      final sensorRepo = ref.read(sensorRepoProvider);
+      if (readingIds == null) {
+        return await sensorRepo.getAllReadings();
+      }
+      return await sensorRepo.getReadingsByIds(readingIds);
+    });
 
 // Keep the private version for internal use
 final _readingsProvider = readingsProvider;
@@ -80,7 +83,6 @@ final sensorRepoProvider = Provider<SensorRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);
   return SensorRepository(db);
 });
-
 
 class ChartsScreen extends ConsumerStatefulWidget {
   const ChartsScreen({super.key});
@@ -106,7 +108,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
   void _initializeTabController(WidgetRef ref) {
     if (_tabController != null) return;
-    
+
     // Get the persisted tab index from the provider
     final initialTabIndex = ref.read(_selectedChartTabIndexProvider);
     _tabController = TabController(
@@ -114,14 +116,15 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       vsync: this,
       initialIndex: initialTabIndex,
     );
-    
+
     // Listen to tab changes and persist the index
     _tabController!.addListener(() {
       if (!_tabController!.indexIsChanging && _tabControllerInitialized) {
-        ref.read(_selectedChartTabIndexProvider.notifier).state = _tabController!.index;
+        ref.read(_selectedChartTabIndexProvider.notifier).state =
+            _tabController!.index;
       }
     });
-    
+
     _tabControllerInitialized = true;
   }
 
@@ -130,7 +133,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     _tabController?.dispose();
     super.dispose();
   }
-
 
   String _getExportFileName(int chartIndex, int? sessionId) {
     final chartNames = [
@@ -144,9 +146,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       'potassium',
       'salinity',
     ];
-    
+
     final baseName = chartNames[chartIndex];
-    
+
     if (sessionId != null) {
       return '${baseName}_session${sessionId}_chart';
     } else {
@@ -169,6 +171,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       'Phosphorus',
       'Potassium',
       'Salinity',
+      'TDS',
     ];
     return chartNames[chartIndex];
   }
@@ -178,51 +181,64 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     switch (chartIndex) {
       case 1: // Moisture
         return (
-          low: TomatoThresholds.moistureLow,
-          high: TomatoThresholds.moistureHigh,
-          info: 'Ideal: ${TomatoThresholds.moistureLow}-${TomatoThresholds.moistureHigh}%'
+          low: CropThresholds.moistureLow,
+          high: CropThresholds.moistureHigh,
+          info:
+              'Ideal: ${CropThresholds.moistureLow}-${CropThresholds.moistureHigh}%',
         );
       case 2: // EC
         return (
-          low: TomatoThresholds.ecLow,
-          high: TomatoThresholds.ecHigh,
-          info: 'Ideal: ${TomatoThresholds.ecLow}-${TomatoThresholds.ecHigh} mS/cm'
+          low: CropThresholds.ecLow,
+          high: CropThresholds.ecHigh,
+          info: 'Ideal: ${CropThresholds.ecLow}-${CropThresholds.ecHigh} mS/cm',
         );
       case 3: // Temperature
         return (
-          low: TomatoThresholds.temperatureLow,
-          high: TomatoThresholds.temperatureHigh,
-          info: 'Ideal: ${TomatoThresholds.temperatureLow}-${TomatoThresholds.temperatureHigh}°C'
+          low: CropThresholds.temperatureLow,
+          high: CropThresholds.temperatureHigh,
+          info:
+              'Ideal: ${CropThresholds.temperatureLow}-${CropThresholds.temperatureHigh}°C',
         );
       case 4: // pH
         return (
-          low: TomatoThresholds.phLow,
-          high: TomatoThresholds.phHigh,
-          info: 'Ideal: ${TomatoThresholds.phLow}-${TomatoThresholds.phHigh}'
+          low: CropThresholds.phLow,
+          high: CropThresholds.phHigh,
+          info: 'Ideal: ${CropThresholds.phLow}-${CropThresholds.phHigh}',
         );
       case 5: // Nitrogen
         return (
-          low: TomatoThresholds.nitrogenLow,
-          high: TomatoThresholds.nitrogenHigh,
-          info: 'Ideal: ${TomatoThresholds.nitrogenLow}-${TomatoThresholds.nitrogenHigh} ppm'
+          low: CropThresholds.nitrogenLow,
+          high: CropThresholds.nitrogenHigh,
+          info:
+              'Ideal: ${CropThresholds.nitrogenLow}-${CropThresholds.nitrogenHigh} ppm',
         );
       case 6: // Phosphorus
         return (
-          low: TomatoThresholds.phosphorusLow,
-          high: TomatoThresholds.phosphorusHigh,
-          info: 'Ideal: ${TomatoThresholds.phosphorusLow}-${TomatoThresholds.phosphorusHigh} ppm'
+          low: CropThresholds.phosphorusLow,
+          high: CropThresholds.phosphorusHigh,
+          info:
+              'Ideal: ${CropThresholds.phosphorusLow}-${CropThresholds.phosphorusHigh} ppm',
         );
       case 7: // Potassium
         return (
-          low: TomatoThresholds.potassiumLow,
-          high: TomatoThresholds.potassiumHigh,
-          info: 'Ideal: ${TomatoThresholds.potassiumLow}-${TomatoThresholds.potassiumHigh} ppm'
+          low: CropThresholds.potassiumLow,
+          high: CropThresholds.potassiumHigh,
+          info:
+              'Ideal: ${CropThresholds.potassiumLow}-${CropThresholds.potassiumHigh} ppm',
         );
       case 8: // Salinity
         return (
-          low: TomatoThresholds.salinityLow,
-          high: TomatoThresholds.salinityHigh,
-          info: 'Ideal: ${TomatoThresholds.salinityLow}-${TomatoThresholds.salinityHigh} g/L'
+          low: CropThresholds.salinityLow,
+          high: CropThresholds.salinityHigh,
+          info:
+              'Ideal: ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} g/L',
+        );
+      case 9: // TDS - reuse salinity thresholds as an approximation
+        return (
+          low: CropThresholds.salinityLow,
+          high: CropThresholds.salinityHigh,
+          info:
+              'Ideal (approx): ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} ppm',
         );
       default:
         return (low: 0, high: 0, info: '');
@@ -230,15 +246,19 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   }
 
   /// Build horizontal reference lines for optimal thresholds
-  List<HorizontalLine> _buildThresholdLines(int chartIndex, double yMin, double yMax) {
+  List<HorizontalLine> _buildThresholdLines(
+    int chartIndex,
+    double yMin,
+    double yMax,
+  ) {
     if (chartIndex == 0) return []; // No thresholds for "All" view
-    
+
     final thresholds = _getThresholds(chartIndex);
     if (thresholds.low == 0 && thresholds.high == 0) return [];
-    
+
     // Only show lines if they're within the visible range
     final lines = <HorizontalLine>[];
-    
+
     if (thresholds.low >= yMin && thresholds.low <= yMax) {
       lines.add(
         HorizontalLine(
@@ -252,7 +272,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         ),
       );
     }
-    
+
     if (thresholds.high >= yMin && thresholds.high <= yMax) {
       lines.add(
         HorizontalLine(
@@ -266,33 +286,35 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         ),
       );
     }
-    
+
     return lines;
   }
 
   /// Performance optimization: Sample data for large datasets
   /// Returns sampled readings if dataset is too large, otherwise returns original
-  List<SensorReading> _sampleDataIfNeeded(List<SensorReading> readings, {int maxPoints = 500}) {
+  List<SensorReading> _sampleDataIfNeeded(
+    List<SensorReading> readings, {
+    int maxPoints = 500,
+  }) {
     if (readings.length <= maxPoints) {
       return readings;
     }
-    
+
     // Sample data evenly across the dataset
     final step = (readings.length / maxPoints).ceil();
     final sampled = <SensorReading>[];
-    
+
     for (int i = 0; i < readings.length; i += step) {
       sampled.add(readings[i]);
     }
-    
+
     // Always include the last reading
     if (sampled.last != readings.last) {
       sampled.add(readings.last);
     }
-    
+
     return sampled;
   }
-
 
   /// Get readings for multiple sessions for comparison
   Future<List<SensorReading>> _getComparisonReadings(
@@ -300,24 +322,24 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     List<ReadingSession> sessions,
   ) async {
     if (sessionIds.isEmpty) return [];
-    
+
     final allReadingIds = <int>[];
     for (final sessionId in sessionIds) {
       final session = sessions.firstWhere(
         (s) => s.id == sessionId,
-        orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+        orElse: () =>
+            ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
       );
       if (session.id != -1) {
         allReadingIds.addAll(session.readingIds);
       }
     }
-    
+
     if (allReadingIds.isEmpty) return [];
-    
+
     final sensorRepo = ref.read(sensorRepoProvider);
     return await sensorRepo.getReadingsByIds(allReadingIds);
   }
-
 
   /// Show session comparison dialog
   Future<void> _showSessionComparisonDialog(
@@ -330,13 +352,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         if (sessions.isEmpty) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No sessions available for comparison')),
+              const SnackBar(
+                content: Text('No sessions available for comparison'),
+              ),
             );
           }
           return;
         }
 
-        final currentComparisonIds = List<int>.from(ref.read(_comparisonSessionIdsProvider));
+        final currentComparisonIds = List<int>.from(
+          ref.read(_comparisonSessionIdsProvider),
+        );
         final selectedIds = <int>{...currentComparisonIds};
 
         if (!context.mounted) return;
@@ -349,8 +375,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         );
 
         if (result != null) {
-          ref.read(_comparisonSessionIdsProvider.notifier).state = result.toList();
-          
+          ref.read(_comparisonSessionIdsProvider.notifier).state = result
+              .toList();
+
           // If comparison mode is active, switch to first selected session for main view
           if (result.isNotEmpty) {
             ref.read(_selectedSessionIdProvider.notifier).state = result.first;
@@ -379,10 +406,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         return null;
       }
       final RenderRepaintBoundary boundary = renderObject;
-      
+
       // Wait a bit to ensure the chart is fully rendered
       await Future.delayed(const Duration(milliseconds: 100));
-      
+
       // Capture the image with high pixel ratio for quality
       final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
       return image;
@@ -396,18 +423,20 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     try {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Exporting all sensors... Please wait.')),
+          const SnackBar(
+            content: Text('Exporting all sensors... Please wait.'),
+          ),
         );
       }
 
       // Store current tab index to restore later
       if (_tabController == null) return;
       final originalTabIndex = _tabController!.index;
-      
+
       // Create a PDF with all sensor charts
       final pdf = pw.Document();
-      final sessionText = sessionId != null 
-          ? 'Session #$sessionId' 
+      final sessionText = sessionId != null
+          ? 'Session #$sessionId'
           : 'All Readings';
       final exportDate = DateTime.now();
 
@@ -431,7 +460,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
         // Switch to this tab
         _tabController?.animateTo(chartIndex);
-        await Future.delayed(const Duration(milliseconds: 300)); // Wait for chart to render
+        await Future.delayed(
+          const Duration(milliseconds: 300),
+        ); // Wait for chart to render
 
         // Capture the chart
         final image = await _captureChartImage(chartIndex);
@@ -440,8 +471,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           continue;
         }
 
-        final ByteData? byteData =
-            await image.toByteData(format: ui.ImageByteFormat.png);
+        final ByteData? byteData = await image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (byteData == null) continue;
 
         final imageBytes = byteData.buffer.asUint8List();
@@ -451,16 +483,16 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         final imageWidth = image.width.toDouble();
         final imageHeight = image.height.toDouble();
         final aspectRatio = imageWidth / imageHeight;
-        
+
         const pageWidth = 595.28;
         const pageHeight = 841.89;
         const margin = 40.0;
         final availableWidth = pageWidth - (margin * 2);
         final availableHeight = pageHeight - (margin * 2) - 80;
-        
+
         double imageWidthPdf = availableWidth;
         double imageHeightPdf = imageWidthPdf / aspectRatio;
-        
+
         if (imageHeightPdf > availableHeight) {
           imageHeightPdf = availableHeight;
           imageWidthPdf = imageHeightPdf * aspectRatio;
@@ -542,22 +574,22 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export error: $e')));
       }
     }
   }
 
-  List<int>? _getSelectedReadingIds(List<ReadingSession> sessions, int? selectedSessionId) {
+  List<int>? _getSelectedReadingIds(
+    List<ReadingSession> sessions,
+    int? selectedSessionId,
+  ) {
     if (selectedSessionId == null) return null; // null means "All Readings"
     final session = sessions.firstWhere(
       (s) => s.id == selectedSessionId,
-      orElse: () => ReadingSession(
-        id: -1,
-        createdAt: DateTime.now(),
-        readingIds: [],
-      ),
+      orElse: () =>
+          ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
     );
     return session.id == -1 ? null : session.readingIds;
   }
@@ -566,67 +598,73 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   Widget build(BuildContext context) {
     // Initialize TabController on first build
     _initializeTabController(ref);
-    
+
     // Get the selected session ID from the persistent provider
     final selectedSessionId = ref.watch(_selectedSessionIdProvider);
-    
+
     // Get the persisted tab index and sync TabController if needed
     final persistedTabIndex = ref.watch(_selectedChartTabIndexProvider);
-    if (_tabController != null && _tabController!.index != persistedTabIndex && !_tabController!.indexIsChanging) {
+    if (_tabController != null &&
+        _tabController!.index != persistedTabIndex &&
+        !_tabController!.indexIsChanging) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_tabController != null && _tabController!.index != persistedTabIndex) {
+        if (_tabController != null &&
+            _tabController!.index != persistedTabIndex) {
           _tabController!.animateTo(persistedTabIndex);
         }
       });
     }
-    
+
     final sessionsAsync = ref.watch(_sessionsProvider);
-    
+
     // Auto-select first session if none is selected and sessions exist
     sessionsAsync.whenData((sessions) {
       if (sessions.isNotEmpty && selectedSessionId == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          ref.read(_selectedSessionIdProvider.notifier).state = sessions.first.id;
+          ref.read(_selectedSessionIdProvider.notifier).state =
+              sessions.first.id;
         });
       }
     });
-    
+
     // Check if comparison mode is active
     final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
-    
+
     final readingIds = sessionsAsync.when(
       data: (sessions) {
         // If comparison mode is active, return null to use comparison provider
         if (comparisonIds.isNotEmpty) {
           return null; // Will use _comparisonReadingsProvider instead
         }
-        
+
         // Otherwise, use selected session or first session
-        final effectiveSessionId = selectedSessionId ?? (sessions.isNotEmpty ? sessions.first.id : null);
+        final effectiveSessionId =
+            selectedSessionId ??
+            (sessions.isNotEmpty ? sessions.first.id : null);
         return _getSelectedReadingIds(sessions, effectiveSessionId);
       },
       loading: () => null,
       error: (_, __) => null,
     );
-    
+
     // Use comparison provider if comparison mode is active, otherwise use regular provider
     final isComparisonMode = comparisonIds.isNotEmpty;
-    
+
     // Get comparison data separately for multi-line rendering
     final comparisonDataAsync = isComparisonMode
         ? ref.watch(_comparisonReadingsProvider)
         : null;
-    
+
     // For non-comparison mode, use regular readings provider
     final readingsAsync = isComparisonMode
         ? null
         : ref.watch(_readingsProvider(readingIds));
-    
+
     // Get session name for display
     final selectedSessionName = sessionsAsync.when(
       data: (sessions) {
         if (sessions.isEmpty) return 'No sessions';
-        
+
         // If comparison mode is active, show comparison info
         if (comparisonIds.isNotEmpty) {
           if (comparisonIds.length == 1) {
@@ -635,16 +673,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             return '${comparisonIds.length} Sessions';
           }
         }
-        
+
         // Otherwise show selected session
         final effectiveSessionId = selectedSessionId ?? sessions.first.id;
         final session = sessions.firstWhere(
           (s) => s.id == effectiveSessionId,
-          orElse: () => ReadingSession(
-            id: -1,
-            createdAt: DateTime.now(),
-            readingIds: [],
-          ),
+          orElse: () =>
+              ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
         );
         return session.id == -1 ? 'No session' : 'Session #${session.id}';
       },
@@ -654,9 +689,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
 
     // Return early if TabController is not initialized yet
     if (_tabController == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -682,6 +715,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             Tab(text: 'Phosphorus'),
             Tab(text: 'Potassium'),
             Tab(text: 'Salinity'),
+            Tab(text: 'TDS'),
           ],
         ),
         actions: [
@@ -721,7 +755,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   ],
                 ),
                 tooltip: 'Compare multiple sessions',
-                onPressed: () => _showSessionComparisonDialog(context, ref, sessionsAsync),
+                onPressed: () =>
+                    _showSessionComparisonDialog(context, ref, sessionsAsync),
               );
             },
           ),
@@ -743,23 +778,28 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                       const PopupMenuItem(child: Text('No sessions available')),
                     ];
                   }
-                  return sessions.map(
-                    (session) => PopupMenuItem<int?>(
-                      value: session.id,
-                      child: Row(
-                        children: [
-                          if (currentSelectedId == session.id)
-                            const Icon(Icons.check, size: 20, color: Colors.green),
-                          if (currentSelectedId == session.id) const SizedBox(width: 8),
-                          Text('Session #${session.id}'),
-                        ],
-                      ),
-                    ),
-                  ).toList();
+                  return sessions
+                      .map(
+                        (session) => PopupMenuItem<int?>(
+                          value: session.id,
+                          child: Row(
+                            children: [
+                              if (currentSelectedId == session.id)
+                                const Icon(
+                                  Icons.check,
+                                  size: 20,
+                                  color: Colors.green,
+                                ),
+                              if (currentSelectedId == session.id)
+                                const SizedBox(width: 8),
+                              Text('Session #${session.id}'),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList();
                 },
-                loading: () => [
-                  const PopupMenuItem(child: Text('Loading...')),
-                ],
+                loading: () => [const PopupMenuItem(child: Text('Loading...'))],
                 error: (_, __) => [
                   const PopupMenuItem(child: Text('Error loading sessions')),
                 ],
@@ -775,10 +815,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             builder: (context) {
               final comparisonIds = ref.watch(_comparisonSessionIdsProvider);
               final hasComparison = comparisonIds.isNotEmpty;
-              
+
               return Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 color: Theme.of(context).colorScheme.primaryContainer,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,7 +832,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         Icon(
                           Icons.filter_alt,
                           size: 20,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -798,7 +843,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
                             ),
                           ),
                         ),
@@ -807,13 +854,20 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                             icon: Icon(
                               Icons.clear,
                               size: 18,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
                             ),
                             tooltip: 'Clear comparison',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: () {
-                              ref.read(_comparisonSessionIdsProvider.notifier).state = [];
+                              ref
+                                      .read(
+                                        _comparisonSessionIdsProvider.notifier,
+                                      )
+                                      .state =
+                                  [];
                             },
                           ),
                       ],
@@ -824,7 +878,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         'Comparing ${comparisonIds.length} session${comparisonIds.length > 1 ? 's' : ''}: ${comparisonIds.map((id) => '#$id').join(', ')}',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer.withOpacity(0.8),
                         ),
                       ),
                     ],
@@ -851,9 +907,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               const SizedBox(height: 16),
                               Text(
                                 'No readings available to display',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: Colors.grey[600],
-                                    ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(color: Colors.grey[600]),
                               ),
                             ],
                           ),
@@ -944,16 +999,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               const SizedBox(height: 16),
                               Text(
                                 'Error displaying charts',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: Colors.red[700],
-                                    ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(color: Colors.red[700]),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 e.toString(),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey[600],
-                                    ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -969,9 +1022,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                           const SizedBox(height: 16),
                           Text(
                             'Loading comparison data...',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.grey[600]),
                           ),
                         ],
                       ),
@@ -988,18 +1040,18 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                           const SizedBox(height: 16),
                           Text(
                             'Error loading comparison data',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Colors.red[700],
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: Colors.red[700]),
                           ),
                           const SizedBox(height: 8),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32.0,
+                            ),
                             child: Text(
                               error.toString(),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey[600],
-                                  ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.grey[600]),
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -1008,201 +1060,211 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                     ),
                   )
                 : readingsAsync != null
-                    ? readingsAsync.when(
-              data: (readings) {
-                if (readings.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.show_chart,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No readings available to display',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.grey[600],
+                ? readingsAsync.when(
+                    data: (readings) {
+                      if (readings.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.show_chart,
+                                size: 64,
+                                color: Colors.grey[400],
                               ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Connect to a device and collect readings to see charts',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[500],
+                              const SizedBox(height: 16),
+                              Text(
+                                'No readings available to display',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(color: Colors.grey[600]),
                               ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                try {
-                  // Sort readings by timestamp
-                  final sortedReadings = List<SensorReading>.from(readings)
-                    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-                  // Sample data for performance if needed
-                  final displayReadings = _sampleDataIfNeeded(sortedReadings);
-
-                    return TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildAllChartsView(displayReadings, originalCount: sortedReadings.length),
-                      _buildChart(
-                        displayReadings,
-                        1,
-                        'Moisture',
-                        '%',
-                        (r) => r.moisture,
-                        Colors.blue,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        2,
-                        'EC',
-                        'mS/cm',
-                        (r) => r.ec,
-                        Colors.green,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        3,
-                        'Temperature',
-                        '°C',
-                        (r) => r.temperature,
-                        Colors.orange,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        4,
-                        'pH',
-                        '',
-                        (r) => r.ph,
-                        Colors.purple,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        5,
-                        'Nitrogen',
-                        'ppm',
-                        (r) => r.nitrogen.toDouble(),
-                        Colors.red,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        6,
-                        'Phosphorus',
-                        'ppm',
-                        (r) => r.phosphorus.toDouble(),
-                        Colors.teal,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        7,
-                        'Potassium',
-                        'ppm',
-                        (r) => r.potassium.toDouble(),
-                        Colors.amber,
-                        originalCount: sortedReadings.length,
-                      ),
-                      _buildChart(
-                        displayReadings,
-                        8,
-                        'Salinity',
-                        'g/L',
-                        (r) => r.salinity,
-                        Colors.cyan,
-                        originalCount: sortedReadings.length,
-                      ),
-                    ],
-                  );
-                } catch (e) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: Colors.red[300],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error displaying charts',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.red[700],
+                              const SizedBox(height: 8),
+                              Text(
+                                'Connect to a device and collect readings to see charts',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey[500]),
+                                textAlign: TextAlign.center,
                               ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          e.toString(),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              },
-              loading: () => Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Loading chart data...',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[600],
+                            ],
                           ),
-                    ),
-                  ],
-                ),
-              ),
-              error: (error, stack) => Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: Colors.red[300],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error loading readings',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.red[700],
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                      child: Text(
-                        error.toString(),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
+                        );
+                      }
+
+                      try {
+                        // Sort readings by timestamp
+                        final sortedReadings = List<SensorReading>.from(
+                          readings,
+                        )..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+                        // Sample data for performance if needed
+                        final displayReadings = _sampleDataIfNeeded(
+                          sortedReadings,
+                        );
+
+                        return TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildAllChartsView(
+                              displayReadings,
+                              originalCount: sortedReadings.length,
                             ),
-                        textAlign: TextAlign.center,
+                            _buildChart(
+                              displayReadings,
+                              1,
+                              'Moisture',
+                              '%',
+                              (r) => r.moisture,
+                              Colors.blue,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              2,
+                              'EC',
+                              'mS/cm',
+                              (r) => r.ec,
+                              Colors.green,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              3,
+                              'Temperature',
+                              '°C',
+                              (r) => r.temperature,
+                              Colors.orange,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              4,
+                              'pH',
+                              '',
+                              (r) => r.ph,
+                              Colors.purple,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              5,
+                              'Nitrogen',
+                              'ppm',
+                              (r) => r.nitrogen.toDouble(),
+                              Colors.red,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              6,
+                              'Phosphorus',
+                              'ppm',
+                              (r) => r.phosphorus.toDouble(),
+                              Colors.teal,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              7,
+                              'Potassium',
+                              'ppm',
+                              (r) => r.potassium.toDouble(),
+                              Colors.amber,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              8,
+                              'Salinity',
+                              'g/L',
+                              (r) => r.salinity,
+                              Colors.cyan,
+                              originalCount: sortedReadings.length,
+                            ),
+                            _buildChart(
+                              displayReadings,
+                              9,
+                              'TDS',
+                              'ppm',
+                              (r) => r.tds,
+                              Colors.deepPurple,
+                              originalCount: sortedReadings.length,
+                            ),
+                          ],
+                        );
+                      } catch (e) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: Colors.red[300],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Error displaying charts',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(color: Colors.red[700]),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                e.toString(),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                    loading: () => Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Loading chart data...',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.grey[600]),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            )
-                    : const Center(child: Text('No data available')),
+                    error: (error, stack) => Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red[300],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error loading readings',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: Colors.red[700]),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32.0,
+                            ),
+                            child: Text(
+                              error.toString(),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.grey[600]),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : const Center(child: Text('No data available')),
           ),
         ],
       ),
@@ -1223,17 +1285,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.show_chart,
-              size: 48,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.show_chart, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 8),
             Text(
               'No data available',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
             ),
           ],
         ),
@@ -1272,9 +1330,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           children: [
             Text(
               '$title ($unit)',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Expanded(
@@ -1386,7 +1444,11 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   clipData: const FlClipData.all(),
                   extraLinesData: ExtraLinesData(
                     verticalLines: [],
-                    horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
+                    horizontalLines: _buildThresholdLines(
+                      chartIndex,
+                      yMin,
+                      yMax,
+                    ),
                   ),
                 ),
               ),
@@ -1407,9 +1469,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                       Text(
                         _getThresholds(chartIndex).info,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.green[700],
-                              fontWeight: FontWeight.w500,
-                            ),
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ],
@@ -1418,9 +1480,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   Text(
                     '${readings.length}/${originalCount} points',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.blue,
-                          fontStyle: FontStyle.italic,
-                        ),
+                      color: Colors.blue,
+                      fontStyle: FontStyle.italic,
+                    ),
                   )
                 else
                   Text(
@@ -1435,87 +1497,92 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     );
   }
 
-  Widget _buildAllChartsView(List<SensorReading> readings, {int originalCount = 0}) {
+  Widget _buildAllChartsView(
+    List<SensorReading> readings, {
+    int originalCount = 0,
+  }) {
     return RepaintBoundary(
       key: _chartKeys[0],
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'All Sensors Overview',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 16),
-          _buildCompactChart(
-            readings,
-            'Moisture',
-            '%',
-            (r) => r.moisture,
-            Colors.blue,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'EC',
-            'mS/cm',
-            (r) => r.ec,
-            Colors.green,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'Temperature',
-            '°C',
-            (r) => r.temperature,
-            Colors.orange,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'pH',
-            '',
-            (r) => r.ph,
-            Colors.purple,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'Nitrogen',
-            'ppm',
-            (r) => r.nitrogen.toDouble(),
-            Colors.red,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'Phosphorus',
-            'ppm',
-            (r) => r.phosphorus.toDouble(),
-            Colors.teal,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'Potassium',
-            'ppm',
-            (r) => r.potassium.toDouble(),
-            Colors.amber,
-          ),
-          const SizedBox(height: 24),
-          _buildCompactChart(
-            readings,
-            'Salinity',
-            'g/L',
-            (r) => r.salinity,
-            Colors.cyan,
-          ),
-        ],
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'All Sensors Overview',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _buildCompactChart(
+              readings,
+              'Moisture',
+              '%',
+              (r) => r.moisture,
+              Colors.blue,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'EC',
+              'mS/cm',
+              (r) => r.ec,
+              Colors.green,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'Temperature',
+              '°C',
+              (r) => r.temperature,
+              Colors.orange,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(readings, 'pH', '', (r) => r.ph, Colors.purple),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'Nitrogen',
+              'ppm',
+              (r) => r.nitrogen.toDouble(),
+              Colors.red,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'Phosphorus',
+              'ppm',
+              (r) => r.phosphorus.toDouble(),
+              Colors.teal,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'Potassium',
+              'ppm',
+              (r) => r.potassium.toDouble(),
+              Colors.amber,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'Salinity',
+              'g/L',
+              (r) => r.salinity,
+              Colors.cyan,
+            ),
+            const SizedBox(height: 24),
+            _buildCompactChart(
+              readings,
+              'TDS',
+              'ppm',
+              (r) => r.tds,
+              Colors.deepPurple,
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -1545,9 +1612,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       children: [
         Text(
           '$title ($unit)',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         SizedBox(
@@ -1653,23 +1720,19 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     // Prepare line data for each session
     final lineBarsData = <LineChartBarData>[];
     final sessionIds = sessionReadings.keys.toList()..sort();
-    
+
     if (sessionIds.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.show_chart,
-              size: 48,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.show_chart, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 8),
             Text(
               'No data available',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
             ),
           ],
         ),
@@ -1680,7 +1743,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     double globalMin = double.infinity;
     double globalMax = double.negativeInfinity;
     final allReadings = sessionReadings.values.expand((r) => r).toList();
-    
+
     for (final reading in allReadings) {
       final value = valueExtractor(reading);
       if (value < globalMin) globalMin = value;
@@ -1696,14 +1759,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     for (int i = 0; i < sessionIds.length; i++) {
       final sessionId = sessionIds[i];
       final readings = sessionReadings[sessionId]!;
-      
+
       // Sort by timestamp
       final sortedReadings = List<SensorReading>.from(readings)
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      
+
       // Sample if needed
       final displayReadings = _sampleDataIfNeeded(sortedReadings);
-      
+
       // Create spots for this session
       final spots = displayReadings.asMap().entries.map((entry) {
         final index = entry.key.toDouble();
@@ -1712,7 +1775,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       }).toList();
 
       final color = sessionColors[i % sessionColors.length];
-      
+
       lineBarsData.add(
         LineChartBarData(
           spots: spots,
@@ -1822,12 +1885,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         if (barIndex < sessionIds.length && xIndex >= 0) {
                           final sessionId = sessionIds[barIndex];
                           final readings = sessionReadings[sessionId]!;
-                          final sorted = List<SensorReading>.from(readings)
-                            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                          final sorted = List<SensorReading>.from(
+                            readings,
+                          )..sort((a, b) => a.timestamp.compareTo(b.timestamp));
                           final sampled = _sampleDataIfNeeded(sorted);
                           if (xIndex < sampled.length) {
                             final reading = sampled[xIndex];
-                            final color = sessionColors[barIndex % sessionColors.length];
+                            final color =
+                                sessionColors[barIndex % sessionColors.length];
                             return LineTooltipItem(
                               'Session #$sessionId\n${valueExtractor(reading).toStringAsFixed(2)} $unit\n${reading.timestamp.toString().split('.')[0]}',
                               TextStyle(
@@ -1852,113 +1917,115 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           )
         : Expanded(
             child: LineChart(
-                LineChartData(
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: (yMax - yMin) / 5,
-                    getDrawingHorizontalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.withOpacity(0.2),
-                        strokeWidth: 1,
-                      );
-                    },
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: (yMax - yMin) / 5,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: Colors.grey.withOpacity(0.2),
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
                   ),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 30,
-                        interval: (xLabels.length / 5).ceil().toDouble(),
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index >= 0 && index < xLabels.length) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Text(
-                                xLabels[index],
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey,
-                                ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 30,
+                      interval: (xLabels.length / 5).ceil().toDouble(),
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index >= 0 && index < xLabels.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              xLabels[index],
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
                               ),
-                            );
-                          }
-                          return const Text('');
-                        },
-                      ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 50,
-                        interval: (yMax - yMin) / 5,
-                        getTitlesWidget: (value, meta) {
-                          return Text(
-                            value.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
                             ),
                           );
-                        },
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(
-                    show: true,
-                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                  ),
-                  minX: 0,
-                  maxX: (xLabels.length - 1).toDouble(),
-                  minY: yMin,
-                  maxY: yMax,
-                  lineBarsData: lineBarsData,
-                  lineTouchData: LineTouchData(
-                    enabled: true,
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                        return touchedSpots.map((spot) {
-                          final barIndex = spot.barIndex;
-                          final xIndex = spot.x.toInt();
-                          if (barIndex < sessionIds.length && xIndex >= 0) {
-                            final sessionId = sessionIds[barIndex];
-                            final readings = sessionReadings[sessionId]!;
-                            final sorted = List<SensorReading>.from(readings)
-                              ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-                            final sampled = _sampleDataIfNeeded(sorted);
-                            if (xIndex < sampled.length) {
-                              final reading = sampled[xIndex];
-                              final color = sessionColors[barIndex % sessionColors.length];
-                              return LineTooltipItem(
-                                'Session #$sessionId\n${valueExtractor(reading).toStringAsFixed(2)} $unit\n${reading.timestamp.toString().split('.')[0]}',
-                                TextStyle(
-                                  color: color,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              );
-                            }
-                          }
-                          return null;
-                        }).toList();
+                        }
+                        return const Text('');
                       },
                     ),
                   ),
-                  clipData: const FlClipData.all(),
-                  extraLinesData: ExtraLinesData(
-                    verticalLines: [],
-                    horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 50,
+                      interval: (yMax - yMin) / 5,
+                      getTitlesWidget: (value, meta) {
+                        return Text(
+                          value.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                ),
+                minX: 0,
+                maxX: (xLabels.length - 1).toDouble(),
+                minY: yMin,
+                maxY: yMax,
+                lineBarsData: lineBarsData,
+                lineTouchData: LineTouchData(
+                  enabled: true,
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final barIndex = spot.barIndex;
+                        final xIndex = spot.x.toInt();
+                        if (barIndex < sessionIds.length && xIndex >= 0) {
+                          final sessionId = sessionIds[barIndex];
+                          final readings = sessionReadings[sessionId]!;
+                          final sorted = List<SensorReading>.from(
+                            readings,
+                          )..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                          final sampled = _sampleDataIfNeeded(sorted);
+                          if (xIndex < sampled.length) {
+                            final reading = sampled[xIndex];
+                            final color =
+                                sessionColors[barIndex % sessionColors.length];
+                            return LineTooltipItem(
+                              'Session #$sessionId\n${valueExtractor(reading).toStringAsFixed(2)} $unit\n${reading.timestamp.toString().split('.')[0]}',
+                              TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          }
+                        }
+                        return null;
+                      }).toList();
+                    },
+                  ),
+                ),
+                clipData: const FlClipData.all(),
+                extraLinesData: ExtraLinesData(
+                  verticalLines: [],
+                  horizontalLines: _buildThresholdLines(chartIndex, yMin, yMax),
+                ),
               ),
-            );
+            ),
+          );
 
     return RepaintBoundary(
       key: customKey ?? _chartKeys[chartIndex],
@@ -1970,16 +2037,18 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           children: [
             Text(
               '$title ($unit)',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             // Legend with improved styling
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
@@ -1994,7 +2063,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   final sessionId = entry.value;
                   final color = sessionColors[index % sessionColors.length];
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: color.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -2017,7 +2089,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         const SizedBox(width: 6),
                         Text(
                           'Session #$sessionId',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: color,
@@ -2044,9 +2117,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                   Text(
                     _getThresholds(chartIndex).info,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.w500,
-                        ),
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ],
@@ -2057,13 +2130,15 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     );
   }
 
-  Widget _buildAllChartsViewComparison(Map<int, List<SensorReading>> sessionReadings) {
+  Widget _buildAllChartsViewComparison(
+    Map<int, List<SensorReading>> sessionReadings,
+  ) {
     // Create unique keys for each chart in the "All" view to avoid duplicate key errors
     final allViewKeys = <int, GlobalKey>{};
     for (int i = 0; i < 8; i++) {
       allViewKeys[i] = GlobalKey();
     }
-    
+
     return RepaintBoundary(
       key: _chartKeys[0],
       child: SingleChildScrollView(
@@ -2073,9 +2148,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           children: [
             Text(
               'All Sensors Overview (Comparison)',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             _buildComparisonChart(
@@ -2183,7 +2258,8 @@ class _SessionComparisonDialog extends StatefulWidget {
   final Set<int> selectedIds;
 
   @override
-  State<_SessionComparisonDialog> createState() => _SessionComparisonDialogState();
+  State<_SessionComparisonDialog> createState() =>
+      _SessionComparisonDialogState();
 }
 
 class _SessionComparisonDialogState extends State<_SessionComparisonDialog> {

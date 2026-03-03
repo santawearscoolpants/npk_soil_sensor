@@ -747,7 +747,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
             phosphorus: reading.phosphorus,
             potassium: reading.potassium,
             salinity: reading.salinity,
-            tds: drift.Value(reading.tds),
+            tds: drift.Value(reading.tds.toDouble()),
             ecConv: drift.Value(reading.ecConv),
             ecCal: drift.Value(reading.ecCal),
             phConv: drift.Value(reading.phConv),

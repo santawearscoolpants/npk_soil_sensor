@@ -30,7 +30,7 @@ void main() {
               phosphorus: 20,
               potassium: 50,
               salinity: 0.8,
-              tds: const drift.Value(310),
+              tds: const drift.Value(310.0),
               ecConv: const drift.Value(0.061),
               nConv: const drift.Value(0.1148),
             ),
@@ -40,7 +40,7 @@ void main() {
       expect(all.length, 1);
       expect(all.first.moisture, 30);
       expect(all.first.nitrogen, 40);
-      expect(all.first.tds, 310);
+      expect(all.first.tds, 310.0);
       expect(all.first.ecConv, 0.061);
       expect(all.first.nConv, 0.1148);
     });
