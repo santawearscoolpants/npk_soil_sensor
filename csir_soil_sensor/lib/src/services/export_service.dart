@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:csv/csv.dart';
 import 'package:path/path.dart' as p;
@@ -80,7 +81,15 @@ class LocalExportService implements ExportService {
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('sensor_readings.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    final xFile = XFile(file.path);
+    if (Platform.isIOS) {
+      await Share.shareXFiles(
+        [xFile],
+        sharePositionOrigin: const Rect.fromLTWH(0, 0, 100, 100),
+      );
+    } else {
+      await Share.shareXFiles([xFile]);
+    }
     return 'Sensor CSV exported and share sheet opened.';
   }
 
@@ -160,7 +169,15 @@ class LocalExportService implements ExportService {
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('combined_data.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    final xFile = XFile(file.path);
+    if (Platform.isIOS) {
+      await Share.shareXFiles(
+        [xFile],
+        sharePositionOrigin: const Rect.fromLTWH(0, 0, 100, 100),
+      );
+    } else {
+      await Share.shareXFiles([xFile]);
+    }
     return 'Combined CSV exported and share sheet opened.';
   }
 
@@ -457,7 +474,15 @@ class LocalExportService implements ExportService {
       return 'No images found to export.';
     }
 
-    await Share.shareXFiles(imageFiles, text: 'Crop parameter images');
+    if (Platform.isIOS) {
+      await Share.shareXFiles(
+        imageFiles,
+        text: 'Crop parameter images',
+        sharePositionOrigin: const Rect.fromLTWH(0, 0, 100, 100),
+      );
+    } else {
+      await Share.shareXFiles(imageFiles, text: 'Crop parameter images');
+    }
     return '${imageFiles.length} image(s) exported and share sheet opened.';
   }
 
@@ -502,7 +527,15 @@ class LocalExportService implements ExportService {
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('crop_parameters.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    final xFile = XFile(file.path);
+    if (Platform.isIOS) {
+      await Share.shareXFiles(
+        [xFile],
+        sharePositionOrigin: const Rect.fromLTWH(0, 0, 100, 100),
+      );
+    } else {
+      await Share.shareXFiles([xFile]);
+    }
     return 'Crop parameters CSV exported and share sheet opened.';
   }
 }

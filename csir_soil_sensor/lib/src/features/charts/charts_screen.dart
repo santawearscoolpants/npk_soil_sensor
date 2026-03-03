@@ -99,7 +99,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   void initState() {
     super.initState();
     // Initialize global keys for each chart
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 10; i++) {
       _chartKeys[i] = GlobalKey();
     }
   }
@@ -110,7 +110,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     // Get the persisted tab index from the provider
     final initialTabIndex = ref.read(_selectedChartTabIndexProvider);
     _tabController = TabController(
-      length: 9,
+      length: 10,
       vsync: this,
       initialIndex: initialTabIndex,
     );
