@@ -13,6 +13,7 @@ String generateMockPayload() {
   final phosphorus = 15 + rand.nextInt(30);
   final potassium = 40 + rand.nextInt(40);
   final salinity = 0.3 + rand.nextDouble() * 0.8;
+  final tds = 250 + rand.nextInt(500);
 
   return '''
 {
@@ -24,9 +25,8 @@ String generateMockPayload() {
   "nitrogen": $nitrogen,
   "phosphorus": $phosphorus,
   "potassium": $potassium,
-  "salinity": ${salinity.toStringAsFixed(2)}
+  "salinity": ${salinity.toStringAsFixed(2)},
+  "tds": $tds
 }
 ''';
 }
-
-

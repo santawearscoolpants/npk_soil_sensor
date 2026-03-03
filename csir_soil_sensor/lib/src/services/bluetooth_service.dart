@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:async';
 import 'dart:io';
 
@@ -12,6 +13,23 @@ import 'bluetooth_constants.dart';
 import 'permission_service.dart';
 import 'session_store.dart';
 
+const _noStateChange = Object();
+
+void _logBluetoothEvent(
+  String message, {
+  Object? error,
+  StackTrace? stackTrace,
+  int level = 800,
+}) {
+  developer.log(
+    message,
+    name: 'csir_soil_sensor.bluetooth',
+    error: error,
+    stackTrace: stackTrace,
+    level: level,
+  );
+}
+
 class LiveReading {
   LiveReading({
     required this.timestamp,
@@ -24,7 +42,7 @@ class LiveReading {
     required this.potassium,
     required this.salinity,
     required this.tds,
-    
+
     this.ecConv,
     this.ecCal,
     this.phConv,
@@ -52,47 +70,165 @@ class LiveReading {
 
   // Optional converted + calibrated values (if provided by firmware JSON)
   final double? ecConv; // EC converted (dS/m)
-  final double? ecCal;  // EC calibrated (dS/m)
+  final double? ecCal; // EC calibrated (dS/m)
   final double? phConv;
   final double? phCal;
-  final double? nConv;  // N converted (%)
-  final double? nCal;   // N calibrated (%)
-  final double? pConv;  // P converted (mg/kg)
-  final double? pCal;   // P calibrated (mg/kg)
-  final double? kConv;  // K converted (cmol(+)/kg)
-  final double? kCal;   // K calibrated (cmol(+)/kg)
+  final double? nConv; // N converted (%)
+  final double? nCal; // N calibrated (%)
+  final double? pConv; // P converted (mg/kg)
+  final double? pCal; // P calibrated (mg/kg)
+  final double? kConv; // K converted (cmol(+)/kg)
+  final double? kCal; // K calibrated (cmol(+)/kg)
+
+  bool get hasDerivedValues =>
+      ecConv != null ||
+      ecCal != null ||
+      phConv != null ||
+      phCal != null ||
+      nConv != null ||
+      nCal != null ||
+      pConv != null ||
+      pCal != null ||
+      kConv != null ||
+      kCal != null;
+
+  double get ecDisplayValue => ecCal ?? ecConv ?? ec;
+  String get ecDisplayUnit =>
+      (ecCal != null || ecConv != null) ? 'dS/m' : 'mS/cm';
+
+  double get phDisplayValue => phCal ?? phConv ?? ph;
+
+  double get nitrogenDisplayValue => nCal ?? nConv ?? nitrogen.toDouble();
+  String get nitrogenDisplayUnit =>
+      (nCal != null || nConv != null) ? '%' : 'mg/kg';
+  int get nitrogenDisplayPrecision => (nCal != null || nConv != null) ? 4 : 0;
+
+  double get phosphorusDisplayValue => pCal ?? pConv ?? phosphorus.toDouble();
+  String get phosphorusDisplayUnit =>
+      (pCal != null || pConv != null) ? 'mg/kg' : 'mg/kg';
+  int get phosphorusDisplayPrecision => (pCal != null || pConv != null) ? 1 : 0;
+
+  double get potassiumDisplayValue => kCal ?? kConv ?? potassium.toDouble();
+  String get potassiumDisplayUnit =>
+      (kCal != null || kConv != null) ? 'cmol(+)/kg' : 'mg/kg';
+  int get potassiumDisplayPrecision => (kCal != null || kConv != null) ? 3 : 0;
+
+  static num? _readNum(
+    Map<String, dynamic> json,
+    String key, {
+    List<String> aliases = const [],
+  }) {
+    for (final candidate in [key, ...aliases]) {
+      final value = json[candidate];
+      if (value == null) continue;
+      if (value is num) return value;
+      if (value is String) return num.tryParse(value);
+    }
+    return null;
+  }
+
+  static double _requiredDouble(
+    Map<String, dynamic> json,
+    String key, {
+    List<String> aliases = const [],
+  }) {
+    final value = _readNum(json, key, aliases: aliases);
+    if (value == null) {
+      throw FormatException('Missing numeric field: $key');
+    }
+    return value.toDouble();
+  }
+
+  static int _requiredInt(
+    Map<String, dynamic> json,
+    String key, {
+    List<String> aliases = const [],
+  }) {
+    final value = _readNum(json, key, aliases: aliases);
+    if (value == null) {
+      throw FormatException('Missing numeric field: $key');
+    }
+    return value.toInt();
+  }
+
+  static double? _optionalDouble(
+    Map<String, dynamic> json,
+    String key, {
+    List<String> aliases = const [],
+  }) {
+    return _readNum(json, key, aliases: aliases)?.toDouble();
+  }
 
   factory LiveReading.fromJson(Map<String, dynamic> json) {
+    final timestampValue = _readNum(json, 'timestamp');
+    final ecConverted = _optionalDouble(json, 'ec_conv', aliases: ['ec_dSm']);
+    final ecCalibrated = _optionalDouble(json, 'ec_cal');
+    final phConverted = _optionalDouble(json, 'ph_conv');
+    final phCalibrated = _optionalDouble(json, 'ph_cal');
+    final nitrogenConverted = _optionalDouble(
+      json,
+      'n_conv',
+      aliases: ['n_percent'],
+    );
+    final nitrogenCalibrated = _optionalDouble(json, 'n_cal');
+    final phosphorusConverted = _optionalDouble(
+      json,
+      'p_conv',
+      aliases: ['p_mgkg'],
+    );
+    final phosphorusCalibrated = _optionalDouble(json, 'p_cal');
+    final potassiumConverted = _optionalDouble(
+      json,
+      'k_conv',
+      aliases: ['k_cmolkg'],
+    );
+    final potassiumCalibrated = _optionalDouble(json, 'k_cal');
+
     return LiveReading(
-      timestamp: json['timestamp'] as int,
-      moisture: (json['moisture'] as num).toDouble(),
-      ec: (json['ec'] as num).toDouble(),
-      temperature: (json['temperature'] as num).toDouble(),
-      ph: (json['ph'] as num).toDouble(),
-      nitrogen: (json['nitrogen'] as num).toInt(),
-      phosphorus: (json['phosphorus'] as num).toInt(),
-      potassium: (json['potassium'] as num).toInt(),
-      salinity: (json['salinity'] as num).toDouble(),
-      tds: (json['tds'] as num).toInt(),
-      ecConv: json['ec_conv'] != null ? (json['ec_conv'] as num).toDouble() : null,
-      ecCal: json['ec_cal'] != null ? (json['ec_cal'] as num).toDouble() : null,
-      phConv: json['ph_conv'] != null ? (json['ph_conv'] as num).toDouble() : null,
-      phCal: json['ph_cal'] != null ? (json['ph_cal'] as num).toDouble() : null,
-      nConv: json['n_conv'] != null ? (json['n_conv'] as num).toDouble() : null,
-      nCal: json['n_cal'] != null ? (json['n_cal'] as num).toDouble() : null,
-      pConv: json['p_conv'] != null ? (json['p_conv'] as num).toDouble() : null,
-      pCal: json['p_cal'] != null ? (json['p_cal'] as num).toDouble() : null,
-      kConv: json['k_conv'] != null ? (json['k_conv'] as num).toDouble() : null,
-      kCal: json['k_cal'] != null ? (json['k_cal'] as num).toDouble() : null,
+      timestamp:
+          timestampValue?.toInt() ??
+          (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+      moisture: _requiredDouble(json, 'moisture', aliases: ['moisture_pct']),
+      ec: _requiredDouble(json, 'ec', aliases: ['ec_dSm']),
+      temperature: _requiredDouble(
+        json,
+        'temperature',
+        aliases: ['temperature_c'],
+      ),
+      ph: _requiredDouble(json, 'ph'),
+      nitrogen:
+          _readNum(json, 'nitrogen')?.toInt() ??
+          ((nitrogenCalibrated ?? nitrogenConverted) != null
+              ? ((nitrogenCalibrated ?? nitrogenConverted)! * 10000).round()
+              : _requiredInt(json, 'nitrogen')),
+      phosphorus:
+          _readNum(json, 'phosphorus')?.toInt() ??
+          ((phosphorusCalibrated ?? phosphorusConverted) != null
+              ? (phosphorusCalibrated ?? phosphorusConverted)!.round()
+              : _requiredInt(json, 'phosphorus')),
+      potassium:
+          _readNum(json, 'potassium')?.toInt() ??
+          ((potassiumCalibrated ?? potassiumConverted) != null
+              ? ((potassiumCalibrated ?? potassiumConverted)! * 391).round()
+              : _requiredInt(json, 'potassium')),
+      salinity: _requiredDouble(json, 'salinity'),
+      tds: _readNum(json, 'tds')?.toInt() ?? 0,
+      ecConv: ecConverted,
+      ecCal: ecCalibrated,
+      phConv: phConverted,
+      phCal: phCalibrated,
+      nConv: nitrogenConverted,
+      nCal: nitrogenCalibrated,
+      pConv: phosphorusConverted,
+      pCal: phosphorusCalibrated,
+      kConv: potassiumConverted,
+      kCal: potassiumCalibrated,
     );
   }
 }
 
 class DiscoveredDevice {
-  DiscoveredDevice({
-    required this.device,
-    required this.name,
-  });
+  DiscoveredDevice({required this.device, required this.name});
 
   final BluetoothDevice device;
   final String name;
@@ -105,6 +241,7 @@ class BluetoothStateModel {
     this.devices = const [],
     this.connectedDeviceName,
     this.pendingCount = 0,
+    this.lastDataErrorMessage,
   });
 
   final String connectionStatus;
@@ -112,29 +249,126 @@ class BluetoothStateModel {
   final List<DiscoveredDevice> devices;
   final String? connectedDeviceName;
   final int pendingCount;
+  final String? lastDataErrorMessage;
 
   bool get isConnected => connectionStatus.startsWith('Connected');
+  bool get isConnecting => connectionStatus.startsWith('Connecting');
+  bool get isScanning => connectionStatus.startsWith('Scanning');
+  bool get isDisconnected => connectionStatus.startsWith('Disconnected');
+  bool get hasSelectedDevice => connectedDeviceName != null;
+  bool get hasLiveReading => latestReading != null;
+  bool get canDisplayLiveReading => hasSelectedDevice && hasLiveReading;
+  bool get hasConnectionIssue =>
+      lastDataErrorMessage != null && lastDataErrorMessage!.isNotEmpty;
+  bool get hasActiveDeviceSession => hasSelectedDevice && !isDisconnected;
 
   BluetoothStateModel copyWith({
     String? connectionStatus,
     LiveReading? latestReading,
     List<DiscoveredDevice>? devices,
-    String? connectedDeviceName,
+    Object? connectedDeviceName = _noStateChange,
     int? pendingCount,
+    Object? lastDataErrorMessage = _noStateChange,
   }) {
     return BluetoothStateModel(
       connectionStatus: connectionStatus ?? this.connectionStatus,
       latestReading: latestReading ?? this.latestReading,
       devices: devices ?? this.devices,
-      connectedDeviceName: connectedDeviceName ?? this.connectedDeviceName,
+      connectedDeviceName: identical(connectedDeviceName, _noStateChange)
+          ? this.connectedDeviceName
+          : connectedDeviceName as String?,
       pendingCount: pendingCount ?? this.pendingCount,
+      lastDataErrorMessage: identical(lastDataErrorMessage, _noStateChange)
+          ? this.lastDataErrorMessage
+          : lastDataErrorMessage as String?,
     );
   }
 }
 
+({List<String> messages, String remainder}) splitJsonPayloads(String buffer) {
+  final messages = <String>[];
+  final firstBrace = buffer.indexOf('{');
+  if (firstBrace == -1) {
+    return (messages: messages, remainder: '');
+  }
+
+  final trimmedBuffer = buffer.substring(firstBrace);
+  int depth = 0;
+  int? objectStart;
+  int lastConsumedIndex = 0;
+  bool inString = false;
+  bool isEscaped = false;
+
+  for (var i = 0; i < trimmedBuffer.length; i++) {
+    final char = trimmedBuffer[i];
+
+    if (isEscaped) {
+      isEscaped = false;
+      continue;
+    }
+
+    if (char == r'\') {
+      isEscaped = true;
+      continue;
+    }
+
+    if (char == '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char == '{') {
+      objectStart ??= i;
+      depth++;
+      continue;
+    }
+
+    if (char == '}') {
+      if (depth == 0) {
+        continue;
+      }
+
+      depth--;
+      if (depth == 0 && objectStart != null) {
+        messages.add(trimmedBuffer.substring(objectStart, i + 1));
+        lastConsumedIndex = i + 1;
+        objectStart = null;
+      }
+    }
+  }
+
+  final remainder = lastConsumedIndex == 0
+      ? trimmedBuffer
+      : trimmedBuffer.substring(lastConsumedIndex);
+
+  return (messages: messages, remainder: remainder);
+}
+
+bool isSensorReadingPayload(Map<String, dynamic> json) {
+  const keyGroups = [
+    ['moisture', 'moisture_pct'],
+    ['ec', 'ec_dSm'],
+    ['temperature', 'temperature_c'],
+    ['ph'],
+    ['nitrogen', 'n_percent', 'n_conv', 'n_cal'],
+    ['phosphorus', 'p_mgkg', 'p_conv', 'p_cal'],
+    ['potassium', 'k_cmolkg', 'k_conv', 'k_cal'],
+    ['salinity'],
+  ];
+
+  return keyGroups.every((group) => group.any(json.containsKey));
+}
+
 class BluetoothService extends StateNotifier<BluetoothStateModel> {
-  BluetoothService(this._sensorRepository, this._sessionStore, this._permissionService)
-      : super(const BluetoothStateModel(connectionStatus: 'Disconnected'));
+  BluetoothService(
+    this._sensorRepository,
+    this._sessionStore,
+    this._permissionService,
+  ) : super(const BluetoothStateModel(connectionStatus: 'Disconnected'));
 
   final SensorRepository _sensorRepository;
   final SessionStore _sessionStore;
@@ -149,6 +383,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   int? _activeCropParamsId;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   bool _shouldIgnoreScanResults = false;
+  String _payloadBuffer = '';
 
   void setActiveCropParamsId(int? id) {
     _activeCropParamsId = id;
@@ -160,19 +395,19 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
   /// For short UUIDs like "f001", returns as is.
   String _normalizeUuid(String uuid) {
     final lower = uuid.toLowerCase().replaceAll('-', '').replaceAll(':', '');
-    
+
     // If it's a full 128-bit UUID (32 hex chars), extract the 16-bit part
     if (lower.length == 32) {
       // Standard BLE base UUID: 0000XXXX-0000-1000-8000-00805F9B34FB
       // The 16-bit UUID is at positions 4-7 (characters 4-8 in 0-indexed)
       return lower.substring(4, 8);
     }
-    
+
     // If it's already short form (4 hex digits), return as is
     if (lower.length == 4) {
       return lower;
     }
-    
+
     // For other formats, try to extract last 4 digits
     return lower.length >= 4 ? lower.substring(lower.length - 4) : lower;
   }
@@ -200,6 +435,7 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
               ? 'Bluetooth permission permanently denied. Enable it in Settings.'
               : 'Bluetooth permission denied. Please allow to scan.',
           devices: [],
+          lastDataErrorMessage: null,
         );
         return;
       }
@@ -230,24 +466,25 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       state = state.copyWith(
         connectionStatus: 'Scanning for devices...',
         devices: [],
+        lastDataErrorMessage: null,
       );
 
       final Map<String, DiscoveredDevice> devices = {};
       _shouldIgnoreScanResults = false; // Reset flag for new scan
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         // If we've already selected a device (even if not fully connected yet), ignore further scan results.
-        if (_shouldIgnoreScanResults || state.connectedDeviceName != null) return;
+        if (_shouldIgnoreScanResults || state.connectedDeviceName != null) {
+          return;
+        }
         for (final result in results) {
           final dev = result.device;
-          final name =
-              dev.platformName.isNotEmpty ? dev.platformName : dev.remoteId.str;
-          devices[dev.remoteId.str] =
-              DiscoveredDevice(device: dev, name: name);
+          final name = dev.platformName.isNotEmpty
+              ? dev.platformName
+              : dev.remoteId.str;
+          devices[dev.remoteId.str] = DiscoveredDevice(device: dev, name: name);
         }
         if (devices.isNotEmpty) {
-          state = state.copyWith(
-            devices: devices.values.toList(),
-          );
+          state = state.copyWith(devices: devices.values.toList());
         }
       });
 
@@ -264,10 +501,14 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
               ? 'No BLE devices found. Make sure the ESP32 is powered and advertising.'
               : 'Tap a device to connect',
           devices: devices.values.toList(),
+          lastDataErrorMessage: null,
         );
       }
     } catch (e) {
-      state = state.copyWith(connectionStatus: 'Error: $e');
+      state = state.copyWith(
+        connectionStatus: 'Error: $e',
+        lastDataErrorMessage: 'Bluetooth scan failed: $e',
+      );
     }
   }
 
@@ -275,12 +516,14 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     // Stop any ongoing scan when user chooses a device.
     _shouldIgnoreScanResults = true; // Stop processing scan results
     await _cancelScan();
+    _payloadBuffer = '';
 
     _connectedDevice = device.device;
     // Clear device list immediately when user selects a device
     state = state.copyWith(
       connectedDeviceName: device.name,
       devices: const [],
+      lastDataErrorMessage: null,
     );
     await _connectToDevice();
   }
@@ -292,13 +535,17 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       return;
     }
 
-    state = state.copyWith(connectionStatus: 'Connecting...');
+    state = state.copyWith(
+      connectionStatus: 'Connecting...',
+      lastDataErrorMessage: null,
+    );
     try {
       await device.connect(timeout: const Duration(seconds: 10));
       // Mark as connected for UI purposes regardless of service layout.
       state = state.copyWith(
         connectionStatus: 'Connected',
         devices: const [],
+        lastDataErrorMessage: null,
       );
 
       // Listen for connection state changes to detect disconnections
@@ -311,7 +558,11 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
           }
         },
         onError: (error) {
-          print('Connection state error: $error');
+          _logBluetoothEvent(
+            'Connection state stream error',
+            error: error,
+            level: 1000,
+          );
           _handleDisconnection();
         },
       );
@@ -319,67 +570,85 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       // Try to discover the soil sensor characteristic in the background.
       try {
         final services = await device.discoverServices();
-        print('Discovered ${services.length} BLE services');
-        
+        _logBluetoothEvent('Discovered ${services.length} BLE services');
+
         bool serviceFound = false;
         bool characteristicFound = false;
-        
+
         for (final service in services) {
           final serviceUuid = service.uuid.toString();
-          print('Service UUID: $serviceUuid');
-          
+          _logBluetoothEvent('Discovered service UUID: $serviceUuid');
+
           if (_uuidMatches(serviceUuid, soilSensorServiceUuid)) {
             serviceFound = true;
-            print('Found matching service!');
-            print('Service has ${service.characteristics.length} characteristics');
-            
+            _logBluetoothEvent('Found matching BLE service');
+            _logBluetoothEvent(
+              'Service has ${service.characteristics.length} characteristics',
+            );
+
             for (final characteristic in service.characteristics) {
               final charUuid = characteristic.uuid.toString();
-              print('Characteristic UUID: $charUuid');
-              
+              _logBluetoothEvent('Discovered characteristic UUID: $charUuid');
+
               if (_uuidMatches(charUuid, soilSensorCharacteristicUuid)) {
                 characteristicFound = true;
-                print('Found matching characteristic!');
-                
+                _logBluetoothEvent('Found matching BLE characteristic');
+
                 _sensorCharacteristic = characteristic;
-                
+
                 // Enable notifications
                 await characteristic.setNotifyValue(true);
-                print('Notifications enabled');
-                
+                _logBluetoothEvent('Notifications enabled');
+
                 // Cancel any existing subscription before creating a new one
                 await _characteristicSubscription?.cancel();
-                
+
                 // Subscribe to value updates
-                _characteristicSubscription = characteristic.onValueReceived.listen(
-                  (data) {
-                    _onCharacteristicData(data);
-                  },
-                  onError: (error) {
-                    print('Error receiving BLE data: $error');
-                    state = state.copyWith(
-                      connectionStatus: 'Data receive error: $error',
+                _characteristicSubscription = characteristic.onValueReceived
+                    .listen(
+                      (data) {
+                        _onCharacteristicData(data);
+                      },
+                      onError: (error) {
+                        _logBluetoothEvent(
+                          'BLE data listener error',
+                          error: error,
+                          level: 1000,
+                        );
+                        state = state.copyWith(
+                          connectionStatus: 'Data receive error: $error',
+                          lastDataErrorMessage:
+                              'BLE notification listener error: $error',
+                        );
+                      },
                     );
-                  },
-                );
-                
-                print('Listening for sensor data...');
+
+                _logBluetoothEvent('Listening for sensor data');
                 return;
               }
             }
           }
         }
-        
+
         if (!serviceFound) {
-          print('Warning: Service ${soilSensorServiceUuid} not found');
+          _logBluetoothEvent(
+            'Expected BLE service not found: $soilSensorServiceUuid',
+            level: 900,
+          );
         } else if (!characteristicFound) {
-          print('Warning: Characteristic ${soilSensorCharacteristicUuid} not found');
+          _logBluetoothEvent(
+            'Expected BLE characteristic not found: '
+            '$soilSensorCharacteristicUuid',
+            level: 900,
+          );
         }
       } catch (e) {
-        print('Service discovery error: $e');
+        _logBluetoothEvent('Service discovery error', error: e, level: 1000);
         // Don't fail the connection, but log the error
         state = state.copyWith(
           connectionStatus: 'Connected (service discovery failed: $e)',
+          lastDataErrorMessage:
+              'Connected, but service discovery did not complete: $e',
         );
       }
     } catch (e) {
@@ -390,87 +659,129 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       state = state.copyWith(
         connectionStatus: 'Connection error: $e',
         connectedDeviceName: null,
+        lastDataErrorMessage: 'Bluetooth connection failed: $e',
       );
     }
   }
 
   Future<void> _onCharacteristicData(List<int> data) async {
-    try {
-      if (data.isEmpty) {
-        print('Received empty BLE data');
-        return;
+    if (data.isEmpty) {
+      _logBluetoothEvent('Received empty BLE payload', level: 900);
+      return;
+    }
+
+    final payloadChunk = utf8.decode(data, allowMalformed: true);
+    _logBluetoothEvent('Received BLE data chunk: $payloadChunk');
+
+    _payloadBuffer += payloadChunk;
+    final splitResult = splitJsonPayloads(_payloadBuffer);
+    _payloadBuffer = splitResult.remainder;
+
+    for (final payload in splitResult.messages) {
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is! Map<String, dynamic>) {
+          _logBluetoothEvent(
+            'Ignoring non-object BLE payload: $payload',
+            level: 900,
+          );
+          continue;
+        }
+
+        if (!isSensorReadingPayload(decoded)) {
+          _logBluetoothEvent(
+            'Ignoring non-sensor BLE payload: $decoded',
+            level: 900,
+          );
+          continue;
+        }
+
+        final rawReading = LiveReading.fromJson(decoded);
+
+        // Normalize timestamp: if it looks too small (e.g., millis since boot),
+        // replace with current Unix time so UI and exports show a real date.
+        final normalizedSeconds = rawReading.timestamp > 946684800
+            ? rawReading.timestamp
+            : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+        final reading = LiveReading(
+          timestamp: normalizedSeconds,
+          moisture: rawReading.moisture,
+          ec: rawReading.ec,
+          temperature: rawReading.temperature,
+          ph: rawReading.ph,
+          nitrogen: rawReading.nitrogen,
+          phosphorus: rawReading.phosphorus,
+          potassium: rawReading.potassium,
+          salinity: rawReading.salinity,
+          tds: rawReading.tds,
+          ecConv: rawReading.ecConv,
+          ecCal: rawReading.ecCal,
+          phConv: rawReading.phConv,
+          phCal: rawReading.phCal,
+          nConv: rawReading.nConv,
+          nCal: rawReading.nCal,
+          pConv: rawReading.pConv,
+          pCal: rawReading.pCal,
+          kConv: rawReading.kConv,
+          kCal: rawReading.kCal,
+        );
+
+        _logBluetoothEvent(
+          'Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}',
+        );
+
+        // Persist immediately and track pending batch ids
+        final ts = DateTime.fromMillisecondsSinceEpoch(
+          reading.timestamp * 1000,
+        );
+
+        final id = await _sensorRepository.insertReading(
+          SensorReadingsCompanion.insert(
+            timestamp: ts,
+            moisture: reading.moisture,
+            ec: reading.ec,
+            temperature: reading.temperature,
+            ph: reading.ph,
+            nitrogen: reading.nitrogen,
+            phosphorus: reading.phosphorus,
+            potassium: reading.potassium,
+            salinity: reading.salinity,
+            tds: drift.Value(reading.tds),
+            ecConv: drift.Value(reading.ecConv),
+            ecCal: drift.Value(reading.ecCal),
+            phConv: drift.Value(reading.phConv),
+            phCal: drift.Value(reading.phCal),
+            nConv: drift.Value(reading.nConv),
+            nCal: drift.Value(reading.nCal),
+            pConv: drift.Value(reading.pConv),
+            pCal: drift.Value(reading.pCal),
+            kConv: drift.Value(reading.kConv),
+            kCal: drift.Value(reading.kCal),
+            cropParamsId: _activeCropParamsId != null
+                ? drift.Value(_activeCropParamsId!)
+                : const drift.Value.absent(),
+          ),
+        );
+        _pendingReadingIds.add(id);
+
+        state = state.copyWith(
+          latestReading: reading,
+          connectionStatus: 'Connected',
+          pendingCount: _pendingReadingIds.length,
+          lastDataErrorMessage: null,
+        );
+      } catch (e, stackTrace) {
+        _logBluetoothEvent(
+          'Error parsing BLE payload: $payload',
+          error: e,
+          stackTrace: stackTrace,
+          level: 1000,
+        );
+        state = state.copyWith(
+          lastDataErrorMessage: 'Could not process sensor payload: $e',
+        );
       }
-      
-      final payload = utf8.decode(data);
-      print('Received BLE data: $payload');
-      
-      final jsonMap = jsonDecode(payload) as Map<String, dynamic>;
-      print('Parsed JSON: $jsonMap');
-      
-      final rawReading = LiveReading.fromJson(jsonMap);
-
-      // Normalize timestamp: if it looks too small (e.g., millis since boot),
-      // replace with current Unix time so UI and exports show a real date.
-      final normalizedSeconds = rawReading.timestamp > 946684800
-          ? rawReading.timestamp
-          : DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-      final reading = LiveReading(
-        timestamp: normalizedSeconds,
-        moisture: rawReading.moisture,
-        ec: rawReading.ec,
-        temperature: rawReading.temperature,
-        ph: rawReading.ph,
-        nitrogen: rawReading.nitrogen,
-        phosphorus: rawReading.phosphorus,
-        potassium: rawReading.potassium,
-        salinity: rawReading.salinity,
-        tds: rawReading.tds,
-        ecConv: rawReading.ecConv,
-        ecCal: rawReading.ecCal,
-        phConv: rawReading.phConv,
-        phCal: rawReading.phCal,
-        nConv: rawReading.nConv,
-        nCal: rawReading.nCal,
-        pConv: rawReading.pConv,
-        pCal: rawReading.pCal,
-        kConv: rawReading.kConv,
-        kCal: rawReading.kCal,
-      );
-
-      print('Created LiveReading: timestamp=${reading.timestamp}, moisture=${reading.moisture}');
-
-      // Persist immediately and track pending batch ids
-      final ts = DateTime.fromMillisecondsSinceEpoch(reading.timestamp * 1000);
-
-      final id = await _sensorRepository.insertReading(
-        SensorReadingsCompanion.insert(
-          timestamp: ts,
-          moisture: reading.moisture,
-          ec: reading.ec,
-          temperature: reading.temperature,
-          ph: reading.ph,
-          nitrogen: reading.nitrogen,
-          phosphorus: reading.phosphorus,
-          potassium: reading.potassium,
-          salinity: reading.salinity,
-          cropParamsId: _activeCropParamsId != null
-              ? drift.Value(_activeCropParamsId!)
-              : const drift.Value.absent(),
-        ),
-      );
-      _pendingReadingIds.add(id);
-
-      state = state.copyWith(
-        latestReading: reading,
-        connectionStatus: 'Connected', // Ensure status stays "Connected"
-        pendingCount: _pendingReadingIds.length,
-      );
-    } catch (e, stackTrace) {
-      print('Error parsing BLE data: $e');
-      print('Stack trace: $stackTrace');
-      print('Raw data: ${data.map((b) => b.toRadixString(16)).join(' ')}');
-      state = state.copyWith(connectionStatus: 'Parse error: $e');
     }
   }
 
@@ -482,9 +793,13 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       state = state.copyWith(
         connectionStatus: 'Demo mode',
         latestReading: reading,
+        lastDataErrorMessage: null,
       );
     } catch (e) {
-      state = state.copyWith(connectionStatus: 'Demo parse error: $e');
+      state = state.copyWith(
+        connectionStatus: 'Demo parse error: $e',
+        lastDataErrorMessage: 'Demo payload parsing failed: $e',
+      );
     }
   }
 
@@ -508,35 +823,40 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     _characteristicSubscription = null;
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
-    
+
     // Clear device references
     _connectedDevice = null;
     _sensorCharacteristic = null;
-    
+    _payloadBuffer = '';
+
     // Update state to reflect disconnection
     state = BluetoothStateModel(
       connectionStatus: 'Disconnected (device disconnected)',
       connectedDeviceName: null,
       devices: const [],
-      pendingCount: _pendingReadingIds.length, // Keep pending count so user can save
+      pendingCount:
+          _pendingReadingIds.length, // Keep pending count so user can save
       latestReading: state.latestReading, // Preserve latest reading
+      lastDataErrorMessage: null,
     );
-    
-    _shouldIgnoreScanResults = false; // Allow scan results again after disconnect
+
+    _shouldIgnoreScanResults =
+        false; // Allow scan results again after disconnect
   }
 
   Future<void> disconnect() async {
-    _shouldIgnoreScanResults = false; // Allow scan results again after disconnect
+    _shouldIgnoreScanResults =
+        false; // Allow scan results again after disconnect
     await _cancelScan();
-    
+
     // Cancel characteristic subscription and disable notifications
     await _characteristicSubscription?.cancel();
     _characteristicSubscription = null;
-    
+
     // Cancel connection state subscription
     await _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
-    
+
     try {
       // Disable notifications before disconnecting
       if (_sensorCharacteristic != null) {
@@ -550,11 +870,12 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
     } catch (_) {
       // ignore disconnect errors
     }
-    
+
     _connectedDevice = null;
     _sensorCharacteristic = null;
     _pendingReadingIds.clear();
-    
+    _payloadBuffer = '';
+
     // Fully reset state to ensure clean disconnection - clear everything except latestReading
     // Use a fresh state to avoid any potential stale data
     state = BluetoothStateModel(
@@ -562,18 +883,18 @@ class BluetoothService extends StateNotifier<BluetoothStateModel> {
       connectedDeviceName: null,
       devices: const [],
       pendingCount: 0,
-      latestReading: state.latestReading, // Preserve latest reading (UI will hide it when disconnected)
+      latestReading: state
+          .latestReading, // Preserve latest reading (UI will hide it when disconnected)
+      lastDataErrorMessage: null,
     );
   }
 }
 
 final bluetoothServiceProvider =
     StateNotifierProvider<BluetoothService, BluetoothStateModel>((ref) {
-  final db = ref.watch(appDatabaseProvider);
-  final repo = SensorRepository(db);
-  final sessions = ref.read(sessionStoreProvider);
-  final permissions = ref.read(permissionServiceProvider);
-  return BluetoothService(repo, sessions, permissions);
-});
-
-
+      final db = ref.watch(appDatabaseProvider);
+      final repo = SensorRepository(db);
+      final sessions = ref.read(sessionStoreProvider);
+      final permissions = ref.read(permissionServiceProvider);
+      return BluetoothService(repo, sessions, permissions);
+    });

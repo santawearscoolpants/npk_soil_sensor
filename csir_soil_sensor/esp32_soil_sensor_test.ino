@@ -70,14 +70,15 @@ void generateSensorData(char* buffer, size_t bufferSize) {
   int phosphorus = constrain(basePhosphorus + random(-3, 4), 15, 45);
   int potassium = constrain(basePotassium + random(-5, 6), 40, 80);
   float salinity = constrain(baseSalinity + randomFloat(-0.1, 0.1), 0.3, 1.1);
+  int tds = 250 + random(0, 500);
   
   // Get current Unix timestamp (simplified - uses millis since boot)
   unsigned long timestamp = millis() / 1000;
   
   // Build JSON string directly into buffer (more memory efficient)
   snprintf(buffer, bufferSize,
-    "{\"timestamp\":%lu,\"moisture\":%.1f,\"ec\":%.2f,\"temperature\":%.1f,\"ph\":%.1f,\"nitrogen\":%d,\"phosphorus\":%d,\"potassium\":%d,\"salinity\":%.2f}",
-    timestamp, moisture, ec, temperature, ph, nitrogen, phosphorus, potassium, salinity);
+    "{\"timestamp\":%lu,\"moisture\":%.1f,\"ec\":%.2f,\"temperature\":%.1f,\"ph\":%.1f,\"nitrogen\":%d,\"phosphorus\":%d,\"potassium\":%d,\"salinity\":%.2f,\"tds\":%d}",
+    timestamp, moisture, ec, temperature, ph, nitrogen, phosphorus, potassium, salinity, tds);
 }
 
 void setup() {

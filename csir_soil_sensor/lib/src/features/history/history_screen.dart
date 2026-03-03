@@ -6,8 +6,9 @@ import '../../data/repositories/crop_repository.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
 
-final _sessionsProvider =
-    FutureProvider.autoDispose<List<ReadingSession>>((ref) async {
+final _sessionsProvider = FutureProvider.autoDispose<List<ReadingSession>>((
+  ref,
+) async {
   final sessionStore = ref.read(sessionStoreProvider);
   return sessionStore.loadSessions();
 });
@@ -121,9 +122,7 @@ Future<void> _showSessionDetails(
   if (readings.isEmpty) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No readings found for this session'),
-        ),
+        const SnackBar(content: Text('No readings found for this session')),
       );
     }
     return;
@@ -228,33 +227,66 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    double? averageOptional(double? Function(SensorReading reading) selector) {
+      final values = widget.readings.map(selector).whereType<double>().toList();
+      if (values.isEmpty) return null;
+      return values.reduce((a, b) => a + b) / values.length;
+    }
+
     // Calculate averages
-    final avgMoisture = widget.readings
-            .map((r) => r.moisture)
-            .reduce((a, b) => a + b) /
+    final avgMoisture =
+        widget.readings.map((r) => r.moisture).reduce((a, b) => a + b) /
         widget.readings.length;
-    final avgEC = widget.readings.map((r) => r.ec).reduce((a, b) => a + b) /
+    final avgEC =
+        widget.readings.map((r) => r.ec).reduce((a, b) => a + b) /
         widget.readings.length;
-    final avgTemp = widget.readings
-            .map((r) => r.temperature)
-            .reduce((a, b) => a + b) /
+    final avgTemp =
+        widget.readings.map((r) => r.temperature).reduce((a, b) => a + b) /
         widget.readings.length;
-    final avgPH = widget.readings.map((r) => r.ph).reduce((a, b) => a + b) /
+    final avgPH =
+        widget.readings.map((r) => r.ph).reduce((a, b) => a + b) /
         widget.readings.length;
 
     // Average raw nutrients (mg/kg) for calibration preview
-    final avgN = widget.readings
+    final avgN =
+        widget.readings
             .map((r) => r.nitrogen.toDouble())
             .reduce((a, b) => a + b) /
         widget.readings.length;
-    final avgP = widget.readings
+    final avgP =
+        widget.readings
             .map((r) => r.phosphorus.toDouble())
             .reduce((a, b) => a + b) /
         widget.readings.length;
-    final avgK = widget.readings
+    final avgK =
+        widget.readings
             .map((r) => r.potassium.toDouble())
             .reduce((a, b) => a + b) /
         widget.readings.length;
+    final avgTds =
+        widget.readings.map((r) => r.tds.toDouble()).reduce((a, b) => a + b) /
+        widget.readings.length;
+    final avgEcConv = averageOptional((r) => r.ecConv);
+    final avgEcCal = averageOptional((r) => r.ecCal);
+    final avgPhConv = averageOptional((r) => r.phConv);
+    final avgPhCal = averageOptional((r) => r.phCal);
+    final avgNConv = averageOptional((r) => r.nConv);
+    final avgNCal = averageOptional((r) => r.nCal);
+    final avgPConv = averageOptional((r) => r.pConv);
+    final avgPCal = averageOptional((r) => r.pCal);
+    final avgKConv = averageOptional((r) => r.kConv);
+    final avgKCal = averageOptional((r) => r.kCal);
+    final hasStoredDerivedValues =
+        avgEcConv != null ||
+        avgEcCal != null ||
+        avgPhConv != null ||
+        avgPhCal != null ||
+        avgNConv != null ||
+        avgNCal != null ||
+        avgPConv != null ||
+        avgPCal != null ||
+        avgKConv != null ||
+        avgKCal != null;
 
     // ---- Match firmware calibration pipeline (calibrated.ino / esp32_soil_sensor_real.ino) ----
     // EC: raw in µS/cm -> sensor in dS/m -> calibrated in dS/m
@@ -296,14 +328,13 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _DetailRow(
-              label: 'Readings',
-              value: '${widget.readings.length}',
-            ),
+            _DetailRow(label: 'Readings', value: '${widget.readings.length}'),
             const SizedBox(height: 8),
             _DetailRow(
               label: 'Date',
-              value: widget.session.createdAt.toLocal().toString().split('.')[0],
+              value: widget.session.createdAt.toLocal().toString().split(
+                '.',
+              )[0],
             ),
             const SizedBox(height: 8),
             _DetailRow(
@@ -323,46 +354,93 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
               label: 'Moisture',
               value: '${avgMoisture.toStringAsFixed(1)} %',
             ),
-            _DetailRow(
-              label: 'EC',
-              value: '${avgEC.toStringAsFixed(2)} mS/cm',
-            ),
+            _DetailRow(label: 'EC', value: '${avgEC.toStringAsFixed(2)} mS/cm'),
             _DetailRow(
               label: 'Temperature',
               value: '${avgTemp.toStringAsFixed(1)} °C',
             ),
-            _DetailRow(
-              label: 'pH',
-              value: avgPH.toStringAsFixed(1),
-            ),
+            _DetailRow(label: 'pH', value: avgPH.toStringAsFixed(1)),
+            _DetailRow(label: 'TDS', value: '${avgTds.toStringAsFixed(0)} ppm'),
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            const Text(
-              'Calibrated Preview',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            Text(
+              hasStoredDerivedValues
+                  ? 'Calibrated Values'
+                  : 'Calibrated Preview',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            _DetailRow(
-              label: 'EC (cal)',
-              value: '${ecStd.toStringAsFixed(3)} dS/m',
-            ),
-            _DetailRow(
-              label: 'pH (cal)',
-              value: phStd.toStringAsFixed(2),
-            ),
-            _DetailRow(
-              label: 'N (cal)',
-              value: '${nStd.toStringAsFixed(3)} %',
-            ),
-            _DetailRow(
-              label: 'P (cal)',
-              value: '${pStd.toStringAsFixed(1)} mg/kg',
-            ),
-            _DetailRow(
-              label: 'K (cal)',
-              value: '${kStd.toStringAsFixed(3)} cmol(+)/kg',
-            ),
+            if (hasStoredDerivedValues) ...[
+              if (avgEcConv != null)
+                _DetailRow(
+                  label: 'EC (conv)',
+                  value: '${avgEcConv.toStringAsFixed(3)} dS/m',
+                ),
+              if (avgEcCal != null)
+                _DetailRow(
+                  label: 'EC (cal)',
+                  value: '${avgEcCal.toStringAsFixed(3)} dS/m',
+                ),
+              if (avgPhConv != null)
+                _DetailRow(
+                  label: 'pH (conv)',
+                  value: avgPhConv.toStringAsFixed(2),
+                ),
+              if (avgPhCal != null)
+                _DetailRow(
+                  label: 'pH (cal)',
+                  value: avgPhCal.toStringAsFixed(2),
+                ),
+              if (avgNConv != null)
+                _DetailRow(
+                  label: 'N (conv)',
+                  value: '${avgNConv.toStringAsFixed(4)} %',
+                ),
+              if (avgNCal != null)
+                _DetailRow(
+                  label: 'N (cal)',
+                  value: '${avgNCal.toStringAsFixed(4)} %',
+                ),
+              if (avgPConv != null)
+                _DetailRow(
+                  label: 'P (conv)',
+                  value: '${avgPConv.toStringAsFixed(1)} mg/kg',
+                ),
+              if (avgPCal != null)
+                _DetailRow(
+                  label: 'P (cal)',
+                  value: '${avgPCal.toStringAsFixed(1)} mg/kg',
+                ),
+              if (avgKConv != null)
+                _DetailRow(
+                  label: 'K (conv)',
+                  value: '${avgKConv.toStringAsFixed(3)} cmol(+)/kg',
+                ),
+              if (avgKCal != null)
+                _DetailRow(
+                  label: 'K (cal)',
+                  value: '${avgKCal.toStringAsFixed(3)} cmol(+)/kg',
+                ),
+            ] else ...[
+              _DetailRow(
+                label: 'EC (cal)',
+                value: '${ecStd.toStringAsFixed(3)} dS/m',
+              ),
+              _DetailRow(label: 'pH (cal)', value: phStd.toStringAsFixed(2)),
+              _DetailRow(
+                label: 'N (cal)',
+                value: '${nStd.toStringAsFixed(3)} %',
+              ),
+              _DetailRow(
+                label: 'P (cal)',
+                value: '${pStd.toStringAsFixed(1)} mg/kg',
+              ),
+              _DetailRow(
+                label: 'K (cal)',
+                value: '${kStd.toStringAsFixed(3)} cmol(+)/kg',
+              ),
+            ],
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
@@ -372,7 +450,7 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<int?>(
-              value: _selectedCropParamsId,
+              initialValue: _selectedCropParamsId,
               decoration: const InputDecoration(
                 labelText: 'Link to crop parameter set',
                 hintText: 'None (unlinked)',
@@ -405,7 +483,8 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
                 widget.onLinkCropParams(value);
               },
             ),
-            if (widget.linkedCropParams != null && widget.linkedCropParams!.isNotEmpty) ...[
+            if (widget.linkedCropParams != null &&
+                widget.linkedCropParams!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 'Currently linked: ${widget.linkedCropParams!.map((cp) => 'Set #${cp.id}: ${cp.soilType}').join(', ')}',
@@ -425,9 +504,7 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
             onPressed: () {
               widget.onDelete?.call();
             },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete Session'),
           ),
       ],
@@ -436,10 +513,7 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-  });
+  const _DetailRow({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -458,9 +532,7 @@ class _DetailRow extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );
@@ -544,14 +616,14 @@ Future<void> _deleteSession(
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(dialogContext, rootNavigator: true).pop(false),
+          onPressed: () =>
+              Navigator.of(dialogContext, rootNavigator: true).pop(false),
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(dialogContext, rootNavigator: true).pop(true),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.red,
-          ),
+          onPressed: () =>
+              Navigator.of(dialogContext, rootNavigator: true).pop(true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
           child: const Text('Delete'),
         ),
       ],
@@ -560,12 +632,12 @@ Future<void> _deleteSession(
 
   // Only proceed if confirmed
   if (confirmed != true) return;
-  
+
   // Close the session details dialog before deleting
   if (context.mounted) {
     Navigator.of(context).pop();
   }
-  
+
   if (!context.mounted) return;
 
   try {
@@ -581,18 +653,18 @@ Future<void> _deleteSession(
     }
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session deleted')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Session deleted')));
       // Refresh the sessions list - this will automatically refresh readings provider
       // since readings provider watches sessions provider
       ref.invalidate(_sessionsProvider);
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error deleting session: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting session: $e')));
     }
   }
 }
@@ -612,9 +684,7 @@ Future<void> _showClearAllDialog(BuildContext context, WidgetRef ref) async {
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.red,
-          ),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
           child: const Text('Delete All'),
         ),
       ],
@@ -624,28 +694,28 @@ Future<void> _showClearAllDialog(BuildContext context, WidgetRef ref) async {
   if (confirmed == true && context.mounted) {
     try {
       final sessionStore = ref.read(sessionStoreProvider);
-      
+
       // Delete all readings from the database
       final sensorRepo = ref.read(_sensorRepoProvider);
       // Use deleteAllReadings for efficiency instead of deleting one by one
       await sensorRepo.deleteAllReadings();
-      
+
       // Clear the session store
       await sessionStore.saveSessions([]);
-      
+
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All sessions deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('All sessions deleted')));
         // Invalidate sessions provider - this will automatically refresh readings provider
         // since readings provider watches sessions provider
         ref.invalidate(_sessionsProvider);
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting sessions: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting sessions: $e')));
       }
     }
   }

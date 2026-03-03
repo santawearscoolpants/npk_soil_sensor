@@ -23,18 +23,21 @@ class BluetoothConnectionScreen extends ConsumerWidget {
             'You have $pendingCount unsaved readings. What would you like to do?',
           ),
           actions: [
-             
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop('cancel'),
               child: const Text('Go Back'),
             ),
-            SizedBox(height: 10,),
-            
-            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            SizedBox(height: 10),
+
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () => Navigator.of(context).pop('discard'),
-              child: const Text('Discard Unsaved Readings', style: TextStyle(color: Colors.white),),
+              child: const Text(
+                'Discard Unsaved Readings',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
-            SizedBox(height: 10,),
+            SizedBox(height: 10),
 
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop('save'),
@@ -85,11 +88,16 @@ class BluetoothConnectionScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bleState = ref.watch(bluetoothServiceProvider);
+    final canDisconnect = bleState.hasSelectedDevice && !bleState.isScanning;
+    final statusColor =
+        bleState.hasActiveDeviceSession && !bleState.isConnecting
+        ? Colors.green
+        : bleState.isScanning || bleState.isConnecting
+        ? Colors.orange
+        : Colors.red;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Bluetooth Connection'),
-      ),
+      appBar: AppBar(title: const Text('Bluetooth Connection')),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -107,14 +115,7 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                         height: 12,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: bleState.connectionStatus == 'Connected' &&
-                                  bleState.connectedDeviceName != null
-                              ? Colors.green
-                              : bleState.connectionStatus.startsWith('Scanning') ||
-                                      bleState.connectionStatus
-                                          .startsWith('Connecting')
-                                  ? Colors.orange
-                                  : Colors.red,
+                          color: statusColor,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -124,9 +125,7 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                           children: [
                             Text(
                               'Connection Status',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
+                              style: Theme.of(context).textTheme.titleSmall
                                   ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 4),
@@ -143,17 +142,44 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (bleState.hasConnectionIssue)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Card(
+                    color: Colors.orange.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade700,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              bleState.lastDataErrorMessage!,
+                              style: TextStyle(color: Colors.orange.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 24),
-              
+
               // Scan button
               ElevatedButton.icon(
-                onPressed: bleState.connectionStatus.startsWith('Scanning')
+                onPressed: bleState.isScanning
                     ? null
                     : () async {
-                        final permissionService =
-                            ref.read(permissionServiceProvider);
-                        final perm =
-                            await permissionService.ensureBluetoothPermissions();
+                        final permissionService = ref.read(
+                          permissionServiceProvider,
+                        );
+                        final perm = await permissionService
+                            .ensureBluetoothPermissions();
 
                         if (perm == BlePermissionState.permanentlyDenied) {
                           if (!context.mounted) return;
@@ -200,37 +226,35 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                             .read(bluetoothServiceProvider.notifier)
                             .scanForDevices();
                       },
-                icon: bleState.connectionStatus.startsWith('Scanning')
+                icon: bleState.isScanning
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                     : const Icon(Icons.bluetooth_searching),
                 label: Text(
-                  bleState.connectionStatus.startsWith('Scanning')
-                      ? 'Scanning...'
-                      : 'Scan for devices',
+                  bleState.isScanning ? 'Scanning...' : 'Scan for devices',
                 ),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
-              
+
               // Device list
               if (bleState.connectedDeviceName == null &&
                   bleState.devices.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Text(
                   'Available Devices',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -238,11 +262,15 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: bleState.devices.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final d = bleState.devices[index];
                       return ListTile(
-                        leading: const Icon(Icons.bluetooth, color: Colors.blue),
+                        leading: const Icon(
+                          Icons.bluetooth,
+                          color: Colors.blue,
+                        ),
                         title: Text(
                           d.name,
                           style: const TextStyle(fontWeight: FontWeight.w500),
@@ -262,10 +290,9 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                   ),
                 ),
               ],
-              
+
               // Disconnect button
-              if (bleState.connectionStatus == 'Connected' &&
-                  bleState.connectedDeviceName != null) ...[
+              if (canDisconnect) ...[
                 if (bleState.pendingCount > 0)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -306,10 +333,14 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                     _handleDisconnect(context, ref, bleState.pendingCount);
                   },
                   icon: const Icon(Icons.link_off),
-                  label: const Text('Disconnect from device'),
+                  label: Text(
+                    bleState.isConnecting
+                        ? 'Cancel connection attempt'
+                        : 'Disconnect from device',
+                  ),
                 ),
               ],
-              
+
               // Empty state message - only show when disconnected and no devices
               if (bleState.connectionStatus == 'Disconnected' &&
                   bleState.connectedDeviceName == null &&
@@ -326,26 +357,27 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                       const SizedBox(height: 16),
                       Text(
                         'Not connected',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.grey.shade600,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: Colors.grey.shade600),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Tap "Scan for devices" to search for your ESP32',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey.shade600,
-                            ),
+                          color: Colors.grey.shade600,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
               ],
-              
+
               // Show message after scan completes with no devices
-              if (bleState.connectionStatus == 'No BLE devices found. Make sure the ESP32 is powered and advertising.' ||
-                  (bleState.connectionStatus == 'Tap a device to connect' && bleState.devices.isEmpty)) ...[
+              if (bleState.connectionStatus ==
+                      'No BLE devices found. Make sure the ESP32 is powered and advertising.' ||
+                  (bleState.connectionStatus == 'Tap a device to connect' &&
+                      bleState.devices.isEmpty)) ...[
                 const SizedBox(height: 32),
                 Center(
                   child: Column(
@@ -358,9 +390,8 @@ class BluetoothConnectionScreen extends ConsumerWidget {
                       const SizedBox(height: 16),
                       Text(
                         bleState.connectionStatus,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.grey.shade600,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: Colors.grey.shade600),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -374,4 +405,3 @@ class BluetoothConnectionScreen extends ConsumerWidget {
     );
   }
 }
-

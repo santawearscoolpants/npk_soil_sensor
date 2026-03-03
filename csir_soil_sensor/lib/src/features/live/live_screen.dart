@@ -6,8 +6,9 @@ import '../../data/repositories/crop_repository.dart';
 import '../../services/bluetooth_service.dart';
 import '../bluetooth/bluetooth_connection_screen.dart';
 
-final _cropParamsProvider =
-    FutureProvider.autoDispose<List<CropParam>>((ref) async {
+final _cropParamsProvider = FutureProvider.autoDispose<List<CropParam>>((
+  ref,
+) async {
   final db = ref.watch(appDatabaseProvider);
   final repo = CropRepository(db);
   return repo.getAllCropParams();
@@ -27,6 +28,13 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
   Widget build(BuildContext context) {
     final bleState = ref.watch(bluetoothServiceProvider);
     final cropParamsAsync = ref.watch(_cropParamsProvider);
+    final canShowLiveReading = bleState.canDisplayLiveReading;
+    final statusColor =
+        bleState.hasActiveDeviceSession && !bleState.isConnecting
+        ? Colors.green
+        : bleState.isScanning || bleState.isConnecting
+        ? Colors.orange
+        : Colors.red;
 
     return SafeArea(
       child: Scaffold(
@@ -62,14 +70,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                           height: 12,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: bleState.connectionStatus == 'Connected' &&
-                                    bleState.connectedDeviceName != null
-                                ? Colors.green
-                                : bleState.connectionStatus.startsWith('Scanning') ||
-                                        bleState.connectionStatus
-                                            .startsWith('Connecting')
-                                    ? Colors.orange
-                                    : Colors.red,
+                            color: statusColor,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -79,9 +80,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                             children: [
                               Text(
                                 'Bluetooth Status',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
+                                style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 4),
@@ -111,13 +110,42 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                   ),
                 ),
               ),
+              if (bleState.hasConnectionIssue)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Card(
+                    color: Colors.orange.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade700,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              bleState.lastDataErrorMessage!,
+                              style: TextStyle(color: Colors.orange.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: _selectedCropParamsId,
+                        initialValue: _selectedCropParamsId,
                         decoration: const InputDecoration(
                           labelText: 'Link to crop parameter set',
                           hintText: 'Optional',
@@ -152,9 +180,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                           setState(() {
                             _selectedCropParamsId = value;
                           });
-                              ref
-                                  .read(bluetoothServiceProvider.notifier)
-                                  .setActiveCropParamsId(value);
+                          ref
+                              .read(bluetoothServiceProvider.notifier)
+                              .setActiveCropParamsId(value);
                         },
                       ),
                     ),
@@ -162,20 +190,28 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (bleState.connectionStatus == 'Connected' &&
-                  bleState.connectedDeviceName != null &&
-                  bleState.latestReading != null)
+              if (canShowLiveReading)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _LiveReadingCard(reading: bleState.latestReading!),
+                  child: Column(
+                    children: [
+                      _LiveReadingCard(reading: bleState.latestReading!),
+                      if (bleState.latestReading!.hasDerivedValues)
+                        _CalibratedReadingCard(
+                          reading: bleState.latestReading!,
+                        ),
+                    ],
+                  ),
                 ),
-              if (!(bleState.connectionStatus == 'Connected' &&
-                  bleState.connectedDeviceName != null &&
-                  bleState.latestReading != null))
-                const Padding(
-                  padding: EdgeInsets.all(32.0),
+              if (!canShowLiveReading)
+                Padding(
+                  padding: const EdgeInsets.all(32),
                   child: Center(
-                    child: Text('No data yet. Connect device to see readings.'),
+                    child: Text(
+                      bleState.hasSelectedDevice
+                          ? 'Waiting for the next sensor reading...'
+                          : 'No data yet. Connect device to see readings.',
+                    ),
                   ),
                 ),
               Padding(
@@ -215,9 +251,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
 }
 
 class _LiveReadingCard extends StatelessWidget {
-  const _LiveReadingCard({
-    required this.reading,
-  });
+  const _LiveReadingCard({required this.reading});
 
   final LiveReading reading;
 
@@ -234,10 +268,9 @@ class _LiveReadingCard extends StatelessWidget {
           children: [
             Text(
               'Latest Reading',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -256,7 +289,8 @@ class _LiveReadingCard extends StatelessWidget {
                 ),
                 _MetricChip(
                   label: 'EC',
-                  value: '${reading.ec.toStringAsFixed(2)} mS/cm',
+                  value:
+                      '${reading.ecDisplayValue.toStringAsFixed(3)} ${reading.ecDisplayUnit}',
                   style: chipStyle,
                 ),
                 _MetricChip(
@@ -266,27 +300,30 @@ class _LiveReadingCard extends StatelessWidget {
                 ),
                 _MetricChip(
                   label: 'pH',
-                  value: reading.ph.toStringAsFixed(1),
+                  value: reading.phDisplayValue.toStringAsFixed(2),
                   style: chipStyle,
                 ),
                 _MetricChip(
                   label: 'Nitrogen (N)',
-                  value: '${reading.nitrogen} mg/kg',
+                  value:
+                      '${reading.nitrogenDisplayValue.toStringAsFixed(reading.nitrogenDisplayPrecision)} ${reading.nitrogenDisplayUnit}',
                   style: chipStyle,
                 ),
                 _MetricChip(
                   label: 'Phosphorus (P)',
-                  value: '${reading.phosphorus} mg/kg',
+                  value:
+                      '${reading.phosphorusDisplayValue.toStringAsFixed(reading.phosphorusDisplayPrecision)} ${reading.phosphorusDisplayUnit}',
                   style: chipStyle,
                 ),
                 _MetricChip(
                   label: 'Potassium (K)',
-                  value: '${reading.potassium} mg/kg',
+                  value:
+                      '${reading.potassiumDisplayValue.toStringAsFixed(reading.potassiumDisplayPrecision)} ${reading.potassiumDisplayUnit}',
                   style: chipStyle,
                 ),
                 _MetricChip(
                   label: 'Salinity',
-                  value: '${reading.salinity.toStringAsFixed(2)}',
+                  value: reading.salinity.toStringAsFixed(2),
                   style: chipStyle,
                 ),
                 _MetricChip(
@@ -294,61 +331,109 @@ class _LiveReadingCard extends StatelessWidget {
                   value: '${reading.tds} ppm',
                   style: chipStyle,
                 ),
-                
-    
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CalibratedReadingCard extends StatelessWidget {
+  const _CalibratedReadingCard({required this.reading});
+
+  final LiveReading reading;
+
+  @override
+  Widget build(BuildContext context) {
+    final chipStyle = Theme.of(context).textTheme.bodyMedium;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Calibrated Values',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Values reported by the sensor conversion/calibration pipeline',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 16),
-            if (reading.ecCal != null ||
-                reading.phCal != null ||
-                reading.nCal != null ||
-                reading.pCal != null ||
-                reading.kCal != null) ...[
-              Text(
-                'Calibrated Preview',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (reading.ecCal != null)
-                    _MetricChip(
-                      label: 'EC (cal)',
-                      value: '${reading.ecCal!.toStringAsFixed(3)} dS/m',
-                      style: chipStyle,
-                    ),
-                  if (reading.phCal != null)
-                    _MetricChip(
-                      label: 'pH (cal)',
-                      value: reading.phCal!.toStringAsFixed(2),
-                      style: chipStyle,
-                    ),
-                  if (reading.nCal != null)
-                    _MetricChip(
-                      label: 'N (cal)',
-                      value: '${reading.nCal!.toStringAsFixed(3)} %',
-                      style: chipStyle,
-                    ),
-                  if (reading.pCal != null)
-                    _MetricChip(
-                      label: 'P (cal)',
-                      value: '${reading.pCal!.toStringAsFixed(1)} mg/kg',
-                      style: chipStyle,
-                    ),
-                  if (reading.kCal != null)
-                    _MetricChip(
-                      label: 'K (cal)',
-                      value: '${reading.kCal!.toStringAsFixed(3)} cmol(+)/kg',
-                      style: chipStyle,
-                    ),
-                ],
-              ),
-            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (reading.ecConv != null)
+                  _MetricChip(
+                    label: 'EC (conv)',
+                    value: '${reading.ecConv!.toStringAsFixed(3)} dS/m',
+                    style: chipStyle,
+                  ),
+                if (reading.ecCal != null)
+                  _MetricChip(
+                    label: 'EC (cal)',
+                    value: '${reading.ecCal!.toStringAsFixed(3)} dS/m',
+                    style: chipStyle,
+                  ),
+                if (reading.phConv != null)
+                  _MetricChip(
+                    label: 'pH (conv)',
+                    value: reading.phConv!.toStringAsFixed(2),
+                    style: chipStyle,
+                  ),
+                if (reading.phCal != null)
+                  _MetricChip(
+                    label: 'pH (cal)',
+                    value: reading.phCal!.toStringAsFixed(2),
+                    style: chipStyle,
+                  ),
+                if (reading.nConv != null)
+                  _MetricChip(
+                    label: 'N (conv)',
+                    value: '${reading.nConv!.toStringAsFixed(4)} %',
+                    style: chipStyle,
+                  ),
+                if (reading.nCal != null)
+                  _MetricChip(
+                    label: 'N (cal)',
+                    value: '${reading.nCal!.toStringAsFixed(4)} %',
+                    style: chipStyle,
+                  ),
+                if (reading.pConv != null)
+                  _MetricChip(
+                    label: 'P (conv)',
+                    value: '${reading.pConv!.toStringAsFixed(1)} mg/kg',
+                    style: chipStyle,
+                  ),
+                if (reading.pCal != null)
+                  _MetricChip(
+                    label: 'P (cal)',
+                    value: '${reading.pCal!.toStringAsFixed(1)} mg/kg',
+                    style: chipStyle,
+                  ),
+                if (reading.kConv != null)
+                  _MetricChip(
+                    label: 'K (conv)',
+                    value: '${reading.kConv!.toStringAsFixed(3)} cmol(+)/kg',
+                    style: chipStyle,
+                  ),
+                if (reading.kCal != null)
+                  _MetricChip(
+                    label: 'K (cal)',
+                    value: '${reading.kCal!.toStringAsFixed(3)} cmol(+)/kg',
+                    style: chipStyle,
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -382,5 +467,3 @@ class _MetricChip extends StatelessWidget {
     );
   }
 }
-
-

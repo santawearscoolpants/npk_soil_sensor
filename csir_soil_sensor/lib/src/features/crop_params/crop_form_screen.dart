@@ -83,6 +83,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
     if (!_formKey.currentState!.validate()) return;
     if (_selectedImage == null && _editingExistingImagePath == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select an image of the crop')),
       );
@@ -119,7 +120,8 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
 
       // Only create a new image entry if the user selected a new image or
       // there was no existing image.
-      final shouldAddImage = _selectedImage != null &&
+      final shouldAddImage =
+          _selectedImage != null &&
           _selectedImage!.path != _editingExistingImagePath;
       if (shouldAddImage) {
         // Get all existing images to determine next sequential number
@@ -127,8 +129,9 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         int maxImageNumber = 0;
         for (final img in allImages) {
           // Extract number from filename like "tomato_001.jpg"
-          final match =
-              RegExp(r'tomato_(\d+)').firstMatch(img.relabelledFileName);
+          final match = RegExp(
+            r'tomato_(\d+)',
+          ).firstMatch(img.relabelledFileName);
           if (match != null) {
             final num = int.tryParse(match.group(1) ?? '0') ?? 0;
             if (num > maxImageNumber) {
@@ -188,9 +191,10 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving data: $e')),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error saving data: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -205,9 +209,7 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Tomato Parameters'),
-        ),
+        appBar: AppBar(title: const Text('Tomato Parameters')),
         body: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(16),
@@ -226,8 +228,10 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                       onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       decoration: const InputDecoration(
                         labelText: 'Soil type',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
                       validator: (v) =>
                           _submitted && (v == null || v.isEmpty) ? ' ' : null,
@@ -240,12 +244,13 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Soil properties',
                         hintText: 'Texture, drainage, organic matter, etc.',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
-                      validator: (v) => _submitted && (v == null || v.isEmpty)
-                          ? ' '
-                          : null,
+                      validator: (v) =>
+                          _submitted && (v == null || v.isEmpty) ? ' ' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -254,8 +259,10 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Leaf color',
                         hintText: 'e.g. dark green, pale yellow',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
                       validator: (v) =>
                           _submitted && (v == null || v.isEmpty) ? ' ' : null,
@@ -263,14 +270,17 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _stemDescriptionController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       decoration: const InputDecoration(
                         labelText: 'Stem size (cm)',
                         hintText: 'e.g. 1.5',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
                       validator: (v) =>
                           _submitted && (v == null || v.isEmpty) ? ' ' : null,
@@ -278,13 +288,16 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _heightController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       decoration: const InputDecoration(
                         labelText: 'Plant height (cm)',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
                       validator: (v) {
                         if (!_submitted) return null;
@@ -302,8 +315,10 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
                       onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       decoration: const InputDecoration(
                         labelText: 'Notes (optional)',
-                        errorStyle:
-                            TextStyle(height: 0, color: Colors.transparent),
+                        errorStyle: TextStyle(
+                          height: 0,
+                          color: Colors.transparent,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -455,9 +470,9 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted set #${item.id}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Deleted set #${item.id}')));
     }
   }
 
@@ -526,9 +541,9 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selected sets deleted')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Selected sets deleted')));
     }
   }
 
@@ -542,8 +557,9 @@ class _CropFormScreenState extends ConsumerState<CropFormScreen> {
   }
 }
 
-final _cropHistoryProvider =
-    FutureProvider.autoDispose<List<CropParam>>((ref) async {
+final _cropHistoryProvider = FutureProvider.autoDispose<List<CropParam>>((
+  ref,
+) async {
   final db = ref.watch(appDatabaseProvider);
   final repo = CropRepository(db);
   return repo.getAllCropParams();
@@ -580,10 +596,9 @@ class _CropParamsHistorySection extends ConsumerWidget {
             Expanded(
               child: Text(
                 'Saved parameter sets',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             if (multiSelectMode)
@@ -593,9 +608,7 @@ class _CropParamsHistorySection extends ConsumerWidget {
                 onPressed: selectedIds.isEmpty ? null : onDeleteSelected,
               ),
             IconButton(
-              icon: Icon(
-                multiSelectMode ? Icons.close : Icons.checklist,
-              ),
+              icon: Icon(multiSelectMode ? Icons.close : Icons.checklist),
               tooltip: multiSelectMode ? 'Cancel selection' : 'Select multiple',
               onPressed: onToggleMultiSelect,
             ),
@@ -656,5 +669,3 @@ class _CropParamsHistorySection extends ConsumerWidget {
     );
   }
 }
-
-

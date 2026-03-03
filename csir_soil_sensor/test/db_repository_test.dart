@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:csir_soil_sensor/src/data/db/app_database.dart';
+import 'package:drift/drift.dart' as drift;
 import 'package:drift/native.dart';
 
 void main() {
@@ -16,7 +17,9 @@ void main() {
     });
 
     test('can insert and read back sensor readings', () async {
-      await db.into(db.sensorReadings).insert(
+      await db
+          .into(db.sensorReadings)
+          .insert(
             SensorReadingsCompanion.insert(
               timestamp: DateTime.utc(2024, 1, 1),
               moisture: 30,
@@ -27,6 +30,9 @@ void main() {
               phosphorus: 20,
               potassium: 50,
               salinity: 0.8,
+              tds: const drift.Value(310),
+              ecConv: const drift.Value(0.061),
+              nConv: const drift.Value(0.1148),
             ),
           );
 
@@ -34,8 +40,9 @@ void main() {
       expect(all.length, 1);
       expect(all.first.moisture, 30);
       expect(all.first.nitrogen, 40);
+      expect(all.first.tds, 310);
+      expect(all.first.ecConv, 0.061);
+      expect(all.first.nConv, 0.1148);
     });
   });
 }
-
-
