@@ -230,4 +230,55 @@ void main() {
       ]);
     });
   });
+
+  group('LocalExportService PDF crop overview', () {
+    late AppDatabase db;
+    late LocalExportService service;
+    late List<CropParam> crops;
+
+    setUp(() {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      service = LocalExportService(db, _FakeSessionStore());
+      crops = [
+        CropParam(
+          id: 1,
+          createdAt: DateTime.utc(2026, 1, 1),
+          soilType: 'Loam',
+          soilProperties: 'Well drained',
+          leafColor: 'Dark green',
+          stemDescription: 'Firm',
+          heightCm: 42.0,
+          notes: 'Healthy crop',
+        ),
+        CropParam(
+          id: 2,
+          createdAt: DateTime.utc(2026, 1, 2),
+          soilType: 'Clay',
+          soilProperties: 'Dense',
+          leafColor: 'Pale green',
+          stemDescription: 'Thin',
+          heightCm: 18.0,
+          notes: 'Needs nutrients',
+        ),
+      ];
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('includes crop parameter overview only for all-sessions report', () {
+      expect(
+        service
+            .pdfOverviewCropParams(sessionId: null, allCropParams: crops)
+            .map((crop) => crop.id)
+            .toList(),
+        [1, 2],
+      );
+      expect(
+        service.pdfOverviewCropParams(sessionId: 1, allCropParams: crops),
+        isEmpty,
+      );
+    });
+  });
 }

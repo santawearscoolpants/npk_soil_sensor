@@ -164,6 +164,15 @@ class LocalExportService implements ExportService {
     ];
   }
 
+  @visibleForTesting
+  List<CropParam> pdfOverviewCropParams({
+    required int? sessionId,
+    required Iterable<CropParam> allCropParams,
+  }) {
+    if (sessionId != null) return const [];
+    return allCropParams.toList();
+  }
+
   @override
   Future<String> exportSensorCsv({
     List<int>? readingIds,
@@ -237,6 +246,10 @@ class LocalExportService implements ExportService {
     // Load all crop parameters
     final crops = await cropRepo.getAllCropParams();
     final cropsById = {for (final c in crops) c.id: c};
+    final overviewCrops = pdfOverviewCropParams(
+      sessionId: sessionId,
+      allCropParams: crops,
+    );
 
     // Pre-load all readings for all sessions
     final sessionData = <_SessionData>[];
@@ -564,7 +577,7 @@ class LocalExportService implements ExportService {
           }
 
           // Add crop parameters section
-          if (crops.isNotEmpty) {
+          if (overviewCrops.isNotEmpty) {
             widgets.addAll([
               pw.SizedBox(height: 16),
               pw.Text(
@@ -583,7 +596,7 @@ class LocalExportService implements ExportService {
                   'Leaf color',
                   'Height (cm)',
                 ],
-                data: crops
+                data: overviewCrops
                     .map(
                       (c) => [
                         c.id,
