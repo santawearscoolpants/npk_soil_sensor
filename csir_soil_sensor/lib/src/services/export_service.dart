@@ -28,6 +28,27 @@ abstract class ExportService {
 class LocalExportService implements ExportService {
   LocalExportService(this._db, this._sessionStore);
 
+  static const List<String> _combinedCsvHeaders = [
+    'readingId',
+    'timestamp',
+    'moisture (%)',
+    'ec (mS/cm)',
+    'temperature (°C)',
+    'ph',
+    'nitrogen (mg/kg)',
+    'phosphorus (mg/kg)',
+    'potassium (mg/kg)',
+    'salinity (g/L)',
+    'tds (ppm)',
+    'soilType',
+    'soilProperties',
+    'leafColor',
+    'stemDescription',
+    'heightCm (cm)',
+    'notes',
+    'imageFilenames',
+  ];
+
   static const List<String> _sensorCsvHeaders = [
     'id',
     'timestamp',
@@ -84,6 +105,65 @@ class LocalExportService implements ExportService {
     ];
   }
 
+  @visibleForTesting
+  List<List<dynamic>> buildCombinedCsvRows({
+    required Iterable<SensorReading> readings,
+    required Iterable<CropParam> cropParamsList,
+    required Map<int, List<String>> imagesByCropId,
+  }) {
+    final readingsList = readings.toList();
+    final cropParamsById = {for (final crop in cropParamsList) crop.id: crop};
+    final linkedCropIds = readingsList
+        .map((reading) => reading.cropParamsId)
+        .whereType<int>()
+        .where(cropParamsById.containsKey)
+        .toSet();
+
+    final fallbackCropId = linkedCropIds.length == 1
+        ? linkedCropIds.first
+        : linkedCropIds.isEmpty && cropParamsById.length == 1
+        ? cropParamsById.keys.first
+        : null;
+
+    return <List<dynamic>>[
+      _combinedCsvHeaders,
+      ...readingsList.asMap().entries.map((entry) {
+        final index = entry.key;
+        final reading = entry.value;
+        final resolvedCropId = cropParamsById.containsKey(reading.cropParamsId)
+            ? reading.cropParamsId
+            : fallbackCropId;
+        final crop = resolvedCropId != null
+            ? cropParamsById[resolvedCropId]
+            : null;
+        final imageFilenames = resolvedCropId != null
+            ? (imagesByCropId[resolvedCropId] ?? []).join('; ')
+            : '';
+
+        return [
+          index + 1, // Start IDs from 1 for each export
+          reading.timestamp.toIso8601String(),
+          reading.moisture,
+          reading.ec,
+          reading.temperature,
+          reading.ph,
+          reading.nitrogen,
+          reading.phosphorus,
+          reading.potassium,
+          reading.salinity,
+          reading.tds,
+          crop?.soilType ?? '',
+          crop?.soilProperties ?? '',
+          crop?.leafColor ?? '',
+          crop?.stemDescription ?? '',
+          crop?.heightCm ?? '',
+          crop?.notes ?? '',
+          imageFilenames,
+        ];
+      }),
+    ];
+  }
+
   @override
   Future<String> exportSensorCsv({
     List<int>? readingIds,
@@ -117,7 +197,6 @@ class LocalExportService implements ExportService {
         ? await sensorRepo.getAllReadings()
         : await sensorRepo.getReadingsByIds(readingIds);
     final cropParamsList = await cropRepo.getAllCropParams();
-    final cropParamsById = {for (final c in cropParamsList) c.id: c};
 
     // Get all images grouped by cropParamsId
     final imagesByCropId = <int, List<String>>{};
@@ -128,80 +207,11 @@ class LocalExportService implements ExportService {
           .toList();
     }
 
-    final rows = <List<dynamic>>[
-      [
-        'readingId',
-        'timestamp',
-        'moisture (%)',
-        'ec (mS/cm)',
-        'temperature (°C)',
-        'ph',
-        'nitrogen (mg/kg)',
-        'phosphorus (mg/kg)',
-        'potassium (mg/kg)',
-        'salinity (g/L)',
-        'tds (ppm)',
-        'ecConv',
-        'ecCal',
-        'phConv',
-        'phCal',
-        'nConv',
-        'nCal',
-        'pConv',
-        'pCal',
-        'kConv',
-        'kCal',
-        'cropParamsId',
-        'soilType',
-        'soilProperties',
-        'leafColor',
-        'stemDescription',
-        'heightCm (cm)',
-        'notes',
-        'imageFilenames',
-      ],
-      ...readings.asMap().entries.map((entry) {
-        final index = entry.key;
-        final r = entry.value;
-        final cp = r.cropParamsId != null
-            ? cropParamsById[r.cropParamsId]
-            : null;
-        final imageFilenames = r.cropParamsId != null
-            ? (imagesByCropId[r.cropParamsId] ?? []).join('; ')
-            : '';
-        return [
-          index + 1, // Start IDs from 1 for each export
-          r.timestamp.toIso8601String(),
-          r.moisture,
-          r.ec,
-          r.temperature,
-          r.ph,
-          r.nitrogen,
-          r.phosphorus,
-          r.potassium,
-          r.salinity,
-          r.tds,
-          r.ecConv ?? '',
-          r.ecCal ?? '',
-          r.phConv ?? '',
-          r.phCal ?? '',
-          r.nConv ?? '',
-          r.nCal ?? '',
-          r.pConv ?? '',
-          r.pCal ?? '',
-          r.kConv ?? '',
-          r.kCal ?? '',
-          r.cropParamsId ?? '', // Handle null as empty string
-          cp?.soilType ?? '',
-          cp?.soilProperties ?? '',
-          cp?.leafColor ?? '',
-          cp?.stemDescription ?? '',
-          cp?.heightCm ?? '',
-          cp?.notes ?? '',
-          imageFilenames,
-        ];
-      }),
-    ];
+    final rows = buildCombinedCsvRows(
+      readings: readings,
+      cropParamsList: cropParamsList,
+      imagesByCropId: imagesByCropId,
+    );
 
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('combined_data.csv');

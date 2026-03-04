@@ -90,4 +90,144 @@ void main() {
       ]);
     });
   });
+
+  group('LocalExportService combined CSV rows', () {
+    late AppDatabase db;
+    late LocalExportService service;
+
+    setUp(() {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      service = LocalExportService(db, _FakeSessionStore());
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('includes crop values without internal sensor fields', () {
+      final rows = service.buildCombinedCsvRows(
+        readings: [
+          SensorReading(
+            id: 1,
+            timestamp: DateTime.utc(2026, 1, 2, 3, 4, 5),
+            moisture: 31.5,
+            ec: 1.8,
+            temperature: 27.4,
+            ph: 6.7,
+            nitrogen: 14,
+            phosphorus: 9,
+            potassium: 22,
+            salinity: 0.6,
+            tds: 420.0,
+            cropParamsId: 7,
+          ),
+        ],
+        cropParamsList: [
+          CropParam(
+            id: 7,
+            createdAt: DateTime.utc(2026, 1, 1),
+            soilType: 'Loam',
+            soilProperties: 'Well drained',
+            leafColor: 'Dark green',
+            stemDescription: 'Firm',
+            heightCm: 42.0,
+            notes: 'Healthy crop',
+          ),
+        ],
+        imagesByCropId: {
+          7: ['Crop_001.jpg'],
+        },
+      );
+
+      expect(rows.first, [
+        'readingId',
+        'timestamp',
+        'moisture (%)',
+        'ec (mS/cm)',
+        'temperature (°C)',
+        'ph',
+        'nitrogen (mg/kg)',
+        'phosphorus (mg/kg)',
+        'potassium (mg/kg)',
+        'salinity (g/L)',
+        'tds (ppm)',
+        'soilType',
+        'soilProperties',
+        'leafColor',
+        'stemDescription',
+        'heightCm (cm)',
+        'notes',
+        'imageFilenames',
+      ]);
+      expect(rows.first, isNot(contains('ecCal')));
+      expect(rows.first, isNot(contains('nConv')));
+      expect(rows.first, isNot(contains('cropParamsId')));
+      expect(rows[1], [
+        1,
+        '2026-01-02T03:04:05.000Z',
+        31.5,
+        1.8,
+        27.4,
+        6.7,
+        14,
+        9,
+        22,
+        0.6,
+        420.0,
+        'Loam',
+        'Well drained',
+        'Dark green',
+        'Firm',
+        42.0,
+        'Healthy crop',
+        'Crop_001.jpg',
+      ]);
+    });
+
+    test('falls back to the only crop parameter set for unlinked readings', () {
+      final rows = service.buildCombinedCsvRows(
+        readings: [
+          SensorReading(
+            id: 1,
+            timestamp: DateTime.utc(2026, 1, 2, 3, 4, 5),
+            moisture: 31.5,
+            ec: 1.8,
+            temperature: 27.4,
+            ph: 6.7,
+            nitrogen: 14,
+            phosphorus: 9,
+            potassium: 22,
+            salinity: 0.6,
+            tds: 420.0,
+            cropParamsId: null,
+          ),
+        ],
+        cropParamsList: [
+          CropParam(
+            id: 3,
+            createdAt: DateTime.utc(2026, 1, 1),
+            soilType: 'Clay',
+            soilProperties: 'Dense',
+            leafColor: 'Pale green',
+            stemDescription: 'Thin',
+            heightCm: 18.0,
+            notes: 'Needs nutrients',
+          ),
+        ],
+        imagesByCropId: {
+          3: ['Crop_003.jpg'],
+        },
+      );
+
+      expect(rows[1].sublist(11), [
+        'Clay',
+        'Dense',
+        'Pale green',
+        'Thin',
+        18.0,
+        'Needs nutrients',
+        'Crop_003.jpg',
+      ]);
+    });
+  });
 }
