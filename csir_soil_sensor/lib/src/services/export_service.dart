@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -16,15 +18,29 @@ import '../services/session_store.dart';
 /// Abstraction for export logic so we can plug in other backends later
 /// (Google Drive, external DB, etc.).
 abstract class ExportService {
-  Future<String> exportSensorCsv({List<int>? readingIds});
-  Future<String> exportCombinedCsv({List<int>? readingIds});
-  Future<String> exportPdfReport({int? sessionId});
-  Future<String> exportImages();
-  Future<String> exportCropParamsCsv();
+  Future<String> exportSensorCsv({List<int>? readingIds, Rect? shareOrigin});
+  Future<String> exportCombinedCsv({List<int>? readingIds, Rect? shareOrigin});
+  Future<String> exportPdfReport({int? sessionId, Rect? shareOrigin});
+  Future<String> exportImages({Rect? shareOrigin});
+  Future<String> exportCropParamsCsv({Rect? shareOrigin});
 }
 
 class LocalExportService implements ExportService {
   LocalExportService(this._db, this._sessionStore);
+
+  static const List<String> _sensorCsvHeaders = [
+    'id',
+    'timestamp',
+    'moisture (%)',
+    'ec (mS/cm)',
+    'temperature (°C)',
+    'ph',
+    'nitrogen (mg/kg)',
+    'phosphorus (mg/kg)',
+    'potassium (mg/kg)',
+    'salinity (g/L)',
+    'tds (ppm)',
+  ];
 
   final AppDatabase _db;
   final SessionStore _sessionStore;
@@ -44,77 +60,56 @@ class LocalExportService implements ExportService {
     return values.reduce((a, b) => a + b) / values.length;
   }
 
+  @visibleForTesting
+  List<List<dynamic>> buildSensorCsvRows(Iterable<SensorReading> readings) {
+    return <List<dynamic>>[
+      _sensorCsvHeaders,
+      ...readings.toList().asMap().entries.map((entry) {
+        final index = entry.key;
+        final reading = entry.value;
+        return [
+          index + 1, // Start IDs from 1 for each export
+          reading.timestamp.toIso8601String(),
+          reading.moisture,
+          reading.ec,
+          reading.temperature,
+          reading.ph,
+          reading.nitrogen,
+          reading.phosphorus,
+          reading.potassium,
+          reading.salinity,
+          reading.tds,
+        ];
+      }),
+    ];
+  }
+
   @override
-  Future<String> exportSensorCsv({List<int>? readingIds}) async {
+  Future<String> exportSensorCsv({
+    List<int>? readingIds,
+    Rect? shareOrigin,
+  }) async {
     final sensorRepo = SensorRepository(_db);
     final readings = readingIds == null
         ? await sensorRepo.getAllReadings()
         : await sensorRepo.getReadingsByIds(readingIds);
 
-    final rows = <List<dynamic>>[
-      [
-        'id',
-        'timestamp',
-        'moisture (%)',
-        'ec (mS/cm)',
-        'temperature (°C)',
-        'ph',
-        'nitrogen (mg/kg)',
-        'phosphorus (mg/kg)',
-        'potassium (mg/kg)',
-        'salinity (g/L)',
-        'tds (ppm)',
-        'ecConv',
-        'ecCal',
-        'phConv',
-        'phCal',
-        'nConv',
-        'nCal',
-        'pConv',
-        'pCal',
-        'kConv',
-        'kCal',
-        'cropParamsId',
-      ],
-      ...readings.asMap().entries.map((entry) {
-        final index = entry.key;
-        final r = entry.value;
-        return [
-          index + 1, // Start IDs from 1 for each export
-          r.timestamp.toIso8601String(),
-          r.moisture,
-          r.ec,
-          r.temperature,
-          r.ph,
-          r.nitrogen,
-          r.phosphorus,
-          r.potassium,
-          r.salinity,
-          r.tds,
-          r.ecConv ?? '',
-          r.ecCal ?? '',
-          r.phConv ?? '',
-          r.phCal ?? '',
-          r.nConv ?? '',
-          r.nCal ?? '',
-          r.pConv ?? '',
-          r.pCal ?? '',
-          r.kConv ?? '',
-          r.kCal ?? '',
-          r.cropParamsId ?? '', // Handle null as empty string
-        ];
-      }),
-    ];
+    final rows = buildSensorCsvRows(readings);
 
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('sensor_readings.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    await Share.shareXFiles([
+      XFile(file.path),
+    ], sharePositionOrigin: shareOrigin);
     return 'Sensor CSV exported and share sheet opened.';
   }
 
   @override
-  Future<String> exportCombinedCsv({List<int>? readingIds}) async {
+  Future<String> exportCombinedCsv({
+    List<int>? readingIds,
+    Rect? shareOrigin,
+  }) async {
     final sensorRepo = SensorRepository(_db);
     final cropRepo = CropRepository(_db);
 
@@ -211,12 +206,14 @@ class LocalExportService implements ExportService {
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('combined_data.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    await Share.shareXFiles([
+      XFile(file.path),
+    ], sharePositionOrigin: shareOrigin);
     return 'Combined CSV exported and share sheet opened.';
   }
 
   @override
-  Future<String> exportPdfReport({int? sessionId}) async {
+  Future<String> exportPdfReport({int? sessionId, Rect? shareOrigin}) async {
     final sensorRepo = SensorRepository(_db);
     final cropRepo = CropRepository(_db);
 
@@ -599,6 +596,7 @@ class LocalExportService implements ExportService {
     await Printing.sharePdf(
       bytes: await pdf.save(),
       filename: 'soil_report.pdf',
+      bounds: shareOrigin,
     );
     return 'PDF report generated and share sheet opened.';
   }
@@ -619,7 +617,7 @@ class LocalExportService implements ExportService {
   }
 
   @override
-  Future<String> exportImages() async {
+  Future<String> exportImages({Rect? shareOrigin}) async {
     final cropRepo = CropRepository(_db);
     final allCropParams = await cropRepo.getAllCropParams();
 
@@ -642,12 +640,16 @@ class LocalExportService implements ExportService {
       return 'No images found to export.';
     }
 
-    await Share.shareXFiles(imageFiles, text: 'Crop parameter images');
+    await Share.shareXFiles(
+      imageFiles,
+      text: 'Crop parameter images',
+      sharePositionOrigin: shareOrigin,
+    );
     return '${imageFiles.length} image(s) exported and share sheet opened.';
   }
 
   @override
-  Future<String> exportCropParamsCsv() async {
+  Future<String> exportCropParamsCsv({Rect? shareOrigin}) async {
     final cropRepo = CropRepository(_db);
     final allCropParams = await cropRepo.getAllCropParams();
 
@@ -687,7 +689,9 @@ class LocalExportService implements ExportService {
     final csvData = const ListToCsvConverter().convert(rows);
     final file = await _createTempFile('crop_parameters.csv');
     await file.writeAsString(csvData);
-    await Share.shareXFiles([XFile(file.path)]);
+    await Share.shareXFiles([
+      XFile(file.path),
+    ], sharePositionOrigin: shareOrigin);
     return 'Crop parameters CSV exported and share sheet opened.';
   }
 }

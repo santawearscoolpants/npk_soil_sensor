@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -13,7 +13,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../services/export_service.dart';
-import '../../services/permission_service.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../data/repositories/crop_repository.dart';
@@ -39,6 +38,37 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   List<ReadingSession> _sessions = [];
   int? _selectedSessionId;
 
+  void _logExportEvent(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    developer.log(
+      message,
+      name: 'csir_soil_sensor.export',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  Rect _shareOriginRect() {
+    final renderObject = context.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      final topLeft = renderObject.localToGlobal(Offset.zero);
+      final center =
+          topLeft +
+          Offset(renderObject.size.width / 2, renderObject.size.height / 2);
+      return Rect.fromCenter(center: center, width: 1, height: 1);
+    }
+
+    final screenSize = MediaQuery.sizeOf(context);
+    return Rect.fromCenter(
+      center: Offset(screenSize.width / 2, screenSize.height / 2),
+      width: 1,
+      height: 1,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -57,334 +87,112 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
   List<int>? _selectedReadingIds() {
     if (_selectedSessionId == null) return null;
-    final session =
-        _sessions.firstWhere((s) => s.id == _selectedSessionId, orElse: () => ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []));
+    final session = _sessions.firstWhere(
+      (s) => s.id == _selectedSessionId,
+      orElse: () =>
+          ReadingSession(id: -1, createdAt: DateTime.now(), readingIds: []),
+    );
     if (session.id == -1) return null;
     return session.readingIds;
   }
 
-  Future<void> _exportSensorCsv() async {
+  Future<void> _runExportTask({
+    required String inProgressStatus,
+    required String errorPrefix,
+    required Future<String> Function() task,
+  }) async {
+    if (_busy) return;
+
     setState(() {
       _busy = true;
-      _status = 'Exporting sensor data CSV...';
+      _status = inProgressStatus;
     });
+
     try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final service = ref.read(exportServiceProvider);
-      final message = await service.exportSensorCsv(
-        readingIds: _selectedReadingIds(),
-      );
+      final message = await task();
+      if (!mounted) return;
       setState(() {
         _status = message;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _status = 'Error exporting sensor CSV: $e';
+        _status = '$errorPrefix: $e';
       });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$errorPrefix: $e')));
     } finally {
-      setState(() {
-        _busy = false;
-      });
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
     }
+  }
+
+  Future<void> _exportSensorCsv() async {
+    await _runExportTask(
+      inProgressStatus: 'Exporting sensor data CSV...',
+      errorPrefix: 'Error exporting sensor CSV',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportSensorCsv(
+          readingIds: _selectedReadingIds(),
+          shareOrigin: _shareOriginRect(),
+        );
+      },
+    );
   }
 
   Future<void> _exportCombinedCsv() async {
-    setState(() {
-      _busy = true;
-      _status = 'Exporting combined data CSV...';
-    });
-    try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
+    await _runExportTask(
+      inProgressStatus: 'Exporting combined data CSV...',
+      errorPrefix: 'Error exporting combined CSV',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportCombinedCsv(
+          readingIds: _selectedReadingIds(),
+          shareOrigin: _shareOriginRect(),
         );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final service = ref.read(exportServiceProvider);
-      final message = await service.exportCombinedCsv(
-        readingIds: _selectedReadingIds(),
-      );
-      setState(() {
-        _status = message;
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Error exporting combined CSV: $e';
-      });
-    } finally {
-      setState(() {
-        _busy = false;
-      });
-    }
+      },
+    );
   }
 
   Future<void> _exportPdfReport() async {
-    setState(() {
-      _busy = true;
-      _status = 'Generating PDF report...';
-    });
-    try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
+    await _runExportTask(
+      inProgressStatus: 'Generating PDF report...',
+      errorPrefix: 'Error generating PDF report',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportPdfReport(
+          sessionId: _selectedSessionId,
+          shareOrigin: _shareOriginRect(),
         );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final service = ref.read(exportServiceProvider);
-      final message = await service.exportPdfReport(sessionId: _selectedSessionId);
-      setState(() {
-        _status = message;
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Error generating PDF report: $e';
-      });
-    } finally {
-      setState(() {
-        _busy = false;
-      });
-    }
+      },
+    );
   }
 
   Future<void> _exportCropParamsCsv() async {
-    setState(() {
-      _busy = true;
-      _status = 'Exporting crop parameters CSV...';
-    });
-    try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final service = ref.read(exportServiceProvider);
-      final message = await service.exportCropParamsCsv();
-      setState(() {
-        _status = message;
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Error exporting crop parameters CSV: $e';
-      });
-    } finally {
-      setState(() {
-        _busy = false;
-      });
-    }
+    await _runExportTask(
+      inProgressStatus: 'Exporting crop parameters CSV...',
+      errorPrefix: 'Error exporting crop parameters CSV',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportCropParamsCsv(shareOrigin: _shareOriginRect());
+      },
+    );
   }
 
   Future<void> _exportImages() async {
-    setState(() {
-      _busy = true;
-      _status = 'Exporting images...';
-    });
-    try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final service = ref.read(exportServiceProvider);
-      final message = await service.exportImages();
-      setState(() {
-        _status = message;
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Error exporting images: $e';
-      });
-    } finally {
-      setState(() {
-        _busy = false;
-      });
-    }
+    await _runExportTask(
+      inProgressStatus: 'Exporting images...',
+      errorPrefix: 'Error exporting images',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportImages(shareOrigin: _shareOriginRect());
+      },
+    );
   }
 
   Future<void> _exportCharts() async {
@@ -392,51 +200,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       _busy = true;
       _status = 'Exporting charts...';
     });
-    
-    try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
 
+    try {
       // Get readings based on selected session
       final readingIds = _selectedReadingIds();
       final sensorRepo = SensorRepository(ref.read(appDatabaseProvider));
@@ -478,11 +243,31 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       final chartConfigs = [
         ['Moisture', '%', (SensorReading r) => r.moisture, Colors.blue],
         ['EC', 'mS/cm', (SensorReading r) => r.ec, Colors.green],
-        ['Temperature', '°C', (SensorReading r) => r.temperature, Colors.orange],
+        [
+          'Temperature',
+          '°C',
+          (SensorReading r) => r.temperature,
+          Colors.orange,
+        ],
         ['pH', '', (SensorReading r) => r.ph, Colors.purple],
-        ['Nitrogen', 'ppm', (SensorReading r) => r.nitrogen.toDouble(), Colors.red],
-        ['Phosphorus', 'ppm', (SensorReading r) => r.phosphorus.toDouble(), Colors.teal],
-        ['Potassium', 'ppm', (SensorReading r) => r.potassium.toDouble(), Colors.amber],
+        [
+          'Nitrogen',
+          'ppm',
+          (SensorReading r) => r.nitrogen.toDouble(),
+          Colors.red,
+        ],
+        [
+          'Phosphorus',
+          'ppm',
+          (SensorReading r) => r.phosphorus.toDouble(),
+          Colors.teal,
+        ],
+        [
+          'Potassium',
+          'ppm',
+          (SensorReading r) => r.potassium.toDouble(),
+          Colors.amber,
+        ],
         ['Salinity', 'g/L', (SensorReading r) => r.salinity, Colors.cyan],
       ];
 
@@ -503,12 +288,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         );
 
         if (chartImage == null) {
-          print('Failed to capture chart for $title');
+          _logExportEvent('Failed to capture chart for $title');
           continue;
         }
 
-        final ByteData? byteData =
-            await chartImage.toByteData(format: ui.ImageByteFormat.png);
+        final ByteData? byteData = await chartImage.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (byteData == null) continue;
 
         final imageBytes = byteData.buffer.asUint8List();
@@ -598,24 +384,26 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(await pdf.save());
 
-      await Share.shareXFiles([XFile(file.path)]);
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], sharePositionOrigin: _shareOriginRect());
 
       if (mounted) {
         setState(() {
           _status = 'Charts exported successfully.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Charts exported as PDF')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Charts exported as PDF')));
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _status = 'Error exporting charts: $e';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export error: $e')));
       }
     } finally {
       if (mounted) {
@@ -633,53 +421,11 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     });
 
     try {
-      final permissionService = ref.read(permissionServiceProvider);
-      final storagePerm = await permissionService.ensureStoragePermission();
-      if (storagePerm == StoragePermissionState.permanentlyDenied) {
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Needed'),
-            content: const Text(
-              'Storage permission was permanently denied. Please enable it in system Settings to export files.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await openAppSettings();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (storagePerm != StoragePermissionState.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Storage permission is required to export files.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
       // 1) Export combined CSV (sensor + parameters)
       final exportService = ref.read(exportServiceProvider);
       await exportService.exportCombinedCsv(
         readingIds: _selectedReadingIds(),
+        shareOrigin: _shareOriginRect(),
       );
 
       // 2) Export charts (PDF with chart images)
@@ -743,10 +489,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           children: [
             Text(
               '$title ($unit)',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Expanded(
@@ -758,7 +501,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                     horizontalInterval: (yMax - yMin) / 5,
                     getDrawingHorizontalLine: (value) {
                       return FlLine(
-                        color: Colors.grey.withOpacity(0.2),
+                        color: Colors.grey.withValues(alpha: 0.2),
                         strokeWidth: 1,
                       );
                     },
@@ -814,7 +557,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   ),
                   borderData: FlBorderData(
                     show: true,
-                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                    ),
                   ),
                   minX: 0,
                   maxX: (readings.length - 1).toDouble(),
@@ -830,7 +575,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                       dotData: const FlDotData(show: false),
                       belowBarData: BarAreaData(
                         show: true,
-                        color: color.withOpacity(0.1),
+                        color: color.withValues(alpha: 0.1),
                       ),
                     ),
                   ],
@@ -853,10 +598,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         builder: (context) => Positioned(
           left: -10000, // Off-screen
           top: -10000,
-          child: Material(
-            type: MaterialType.transparency,
-            child: chartWidget,
-          ),
+          child: Material(type: MaterialType.transparency, child: chartWidget),
         ),
       );
 
@@ -880,8 +622,12 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
       overlayEntry.remove();
       return image;
-    } catch (e) {
-      print('Error capturing chart: $e');
+    } catch (e, stackTrace) {
+      _logExportEvent(
+        'Error capturing chart widget',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -901,9 +647,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete All'),
           ),
         ],
@@ -925,7 +669,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
       // Delete all sensor readings
       await sensorRepo.deleteAllReadings();
-      
+
       // Delete all crop parameters (this also deletes associated images from DB)
       await cropRepo.deleteAllCropParams();
 
@@ -975,9 +719,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Export & Share'),
-        ),
+        appBar: AppBar(title: const Text('Export & Share')),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -994,14 +736,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   children: [
                     Text(
                       'Select session to export (or All readings):',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int?>(
-                      value: _selectedSessionId,
+                      initialValue: _selectedSessionId,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         isDense: true,
@@ -1091,10 +832,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               const SizedBox(height: 12),
               Text(
                 'Data Management:',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -1112,16 +852,12 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               const SizedBox(height: 24),
               Text(
                 'Last status:',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
-              Text(
-                _status,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(_status, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),
@@ -1129,5 +865,3 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     );
   }
 }
-
-

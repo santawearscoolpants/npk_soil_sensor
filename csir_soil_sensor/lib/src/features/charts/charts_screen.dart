@@ -93,6 +93,19 @@ class ChartsScreen extends ConsumerStatefulWidget {
 
 class _ChartsScreenState extends ConsumerState<ChartsScreen>
     with SingleTickerProviderStateMixin {
+  static const _chartTabTitles = <String>[
+    'All',
+    'Moisture',
+    'EC',
+    'Temperature',
+    'pH',
+    'Nitrogen',
+    'Phosphorus',
+    'Potassium',
+    'Salinity',
+    'TDS',
+  ];
+
   TabController? _tabController;
   final Map<int, GlobalKey> _chartKeys = {};
   bool _tabControllerInitialized = false;
@@ -101,7 +114,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   void initState() {
     super.initState();
     // Initialize global keys for each chart
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < _chartTabTitles.length; i++) {
       _chartKeys[i] = GlobalKey();
     }
   }
@@ -112,7 +125,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
     // Get the persisted tab index from the provider
     final initialTabIndex = ref.read(_selectedChartTabIndexProvider);
     _tabController = TabController(
-      length: 9,
+      length: _chartTabTitles.length,
       vsync: this,
       initialIndex: initialTabIndex,
     );
@@ -145,6 +158,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
       'phosphorus',
       'potassium',
       'salinity',
+      'tds',
     ];
 
     final baseName = chartNames[chartIndex];
@@ -440,8 +454,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           : 'All Readings';
       final exportDate = DateTime.now();
 
-      // Chart indices to capture (1-8 for individual sensors)
-      final chartIndices = [1, 2, 3, 4, 5, 6, 7, 8];
+      // Chart indices to capture (1-9 for individual sensors)
+      final chartIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9];
       final chartTitles = [
         'Moisture',
         'EC',
@@ -451,6 +465,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         'Phosphorus',
         'Potassium',
         'Salinity',
+        'TDS',
       ];
 
       // Switch to each tab, capture the chart, then move to next
@@ -705,18 +720,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             // Update the persisted tab index when user taps a tab
             ref.read(_selectedChartTabIndexProvider.notifier).state = index;
           },
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'Moisture'),
-            Tab(text: 'EC'),
-            Tab(text: 'Temperature'),
-            Tab(text: 'pH'),
-            Tab(text: 'Nitrogen'),
-            Tab(text: 'Phosphorus'),
-            Tab(text: 'Potassium'),
-            Tab(text: 'Salinity'),
-            Tab(text: 'TDS'),
-          ],
+          tabs: _chartTabTitles.map((title) => Tab(text: title)).toList(),
         ),
         actions: [
           // Session comparison button
@@ -983,6 +987,14 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               'g/L',
                               (r) => r.salinity,
                               Colors.cyan,
+                            ),
+                            _buildComparisonChart(
+                              sessionReadings,
+                              9,
+                              'TDS',
+                              'ppm',
+                              (r) => r.tds,
+                              Colors.deepPurple,
                             ),
                           ],
                         );
@@ -2135,7 +2147,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
   ) {
     // Create unique keys for each chart in the "All" view to avoid duplicate key errors
     final allViewKeys = <int, GlobalKey>{};
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 9; i++) {
       allViewKeys[i] = GlobalKey();
     }
 
@@ -2238,6 +2250,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
               (r) => r.salinity,
               Colors.cyan,
               customKey: allViewKeys[7],
+              isScrollable: true,
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonChart(
+              sessionReadings,
+              0,
+              'TDS',
+              'ppm',
+              (r) => r.tds,
+              Colors.deepPurple,
+              customKey: allViewKeys[8],
               isScrollable: true,
             ),
           ],
