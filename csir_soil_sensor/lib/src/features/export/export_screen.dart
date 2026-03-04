@@ -416,40 +416,17 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   }
 
   Future<void> _exportAll() async {
-    setState(() {
-      _busy = true;
-      _status = 'Exporting all data...';
-    });
-
-    try {
-      // 1) Export combined CSV (sensor + parameters)
-      final exportService = ref.read(exportServiceProvider);
-      await exportService.exportCombinedCsv(
-        readingIds: _selectedReadingIds(),
-        shareOrigin: _shareOriginRect(),
-      );
-
-      // 2) Export charts (PDF with chart images)
-      await _exportCharts();
-
-      if (mounted) {
-        setState(() {
-          _status = 'All data exported.';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _status = 'Error exporting all data: $e';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
+    await _runExportTask(
+      inProgressStatus: 'Exporting combined CSV and linked images...',
+      errorPrefix: 'Error exporting all data',
+      task: () {
+        final service = ref.read(exportServiceProvider);
+        return service.exportCombinedCsvAndImages(
+          readingIds: _selectedReadingIds(),
+          shareOrigin: _shareOriginRect(),
+        );
+      },
+    );
   }
 
   Future<ui.Image?> _captureChartWidget(

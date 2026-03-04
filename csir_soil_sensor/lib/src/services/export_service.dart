@@ -20,6 +20,10 @@ import '../services/session_store.dart';
 abstract class ExportService {
   Future<String> exportSensorCsv({List<int>? readingIds, Rect? shareOrigin});
   Future<String> exportCombinedCsv({List<int>? readingIds, Rect? shareOrigin});
+  Future<String> exportCombinedCsvAndImages({
+    List<int>? readingIds,
+    Rect? shareOrigin,
+  });
   Future<String> exportPdfReport({int? sessionId, Rect? shareOrigin});
   Future<String> exportImages({Rect? shareOrigin});
   Future<String> exportCropParamsCsv({Rect? shareOrigin});
@@ -113,26 +117,21 @@ class LocalExportService implements ExportService {
   }) {
     final readingsList = readings.toList();
     final cropParamsById = {for (final crop in cropParamsList) crop.id: crop};
-    final linkedCropIds = readingsList
-        .map((reading) => reading.cropParamsId)
-        .whereType<int>()
-        .where(cropParamsById.containsKey)
-        .toSet();
-
-    final fallbackCropId = linkedCropIds.length == 1
-        ? linkedCropIds.first
-        : linkedCropIds.isEmpty && cropParamsById.length == 1
-        ? cropParamsById.keys.first
-        : null;
+    final fallbackCropId = _combinedCsvFallbackCropId(
+      readings: readingsList,
+      cropParamsById: cropParamsById,
+    );
 
     return <List<dynamic>>[
       _combinedCsvHeaders,
       ...readingsList.asMap().entries.map((entry) {
         final index = entry.key;
         final reading = entry.value;
-        final resolvedCropId = cropParamsById.containsKey(reading.cropParamsId)
-            ? reading.cropParamsId
-            : fallbackCropId;
+        final resolvedCropId = _resolveCombinedCsvCropId(
+          reading: reading,
+          cropParamsById: cropParamsById,
+          fallbackCropId: fallbackCropId,
+        );
         final crop = resolvedCropId != null
             ? cropParamsById[resolvedCropId]
             : null;
@@ -173,6 +172,106 @@ class LocalExportService implements ExportService {
     return allCropParams.toList();
   }
 
+  int? _combinedCsvFallbackCropId({
+    required List<SensorReading> readings,
+    required Map<int, CropParam> cropParamsById,
+  }) {
+    final linkedCropIds = readings
+        .map((reading) => reading.cropParamsId)
+        .whereType<int>()
+        .where(cropParamsById.containsKey)
+        .toSet();
+
+    if (linkedCropIds.length == 1) {
+      return linkedCropIds.first;
+    }
+    if (linkedCropIds.isEmpty && cropParamsById.length == 1) {
+      return cropParamsById.keys.first;
+    }
+    return null;
+  }
+
+  int? _resolveCombinedCsvCropId({
+    required SensorReading reading,
+    required Map<int, CropParam> cropParamsById,
+    required int? fallbackCropId,
+  }) {
+    return cropParamsById.containsKey(reading.cropParamsId)
+        ? reading.cropParamsId
+        : fallbackCropId;
+  }
+
+  Future<
+    ({
+      List<SensorReading> readings,
+      List<CropParam> cropParamsList,
+      Map<int, List<String>> imagesByCropId,
+    })
+  >
+  _loadCombinedExportData(List<int>? readingIds) async {
+    final sensorRepo = SensorRepository(_db);
+    final cropRepo = CropRepository(_db);
+
+    final readings = readingIds == null
+        ? await sensorRepo.getAllReadings()
+        : await sensorRepo.getReadingsByIds(readingIds);
+    final cropParamsList = await cropRepo.getAllCropParams();
+    final imagesByCropId = <int, List<String>>{};
+
+    for (final crop in cropParamsList) {
+      final images = await cropRepo.getImagesForCrop(crop.id);
+      imagesByCropId[crop.id] = images
+          .map((img) => img.relabelledFileName)
+          .toList();
+    }
+
+    return (
+      readings: readings,
+      cropParamsList: cropParamsList,
+      imagesByCropId: imagesByCropId,
+    );
+  }
+
+  Future<File> _createCombinedCsvFile({
+    required Iterable<SensorReading> readings,
+    required Iterable<CropParam> cropParamsList,
+    required Map<int, List<String>> imagesByCropId,
+  }) async {
+    final rows = buildCombinedCsvRows(
+      readings: readings,
+      cropParamsList: cropParamsList,
+      imagesByCropId: imagesByCropId,
+    );
+    final csvData = const ListToCsvConverter().convert(rows);
+    final file = await _createTempFile('combined_data.csv');
+    await file.writeAsString(csvData);
+    return file;
+  }
+
+  @visibleForTesting
+  Set<int> combinedExportCropIds({
+    required Iterable<SensorReading> readings,
+    required Iterable<CropParam> cropParamsList,
+  }) {
+    final readingsList = readings.toList();
+    final cropParamsById = {for (final crop in cropParamsList) crop.id: crop};
+    final fallbackCropId = _combinedCsvFallbackCropId(
+      readings: readingsList,
+      cropParamsById: cropParamsById,
+    );
+
+    return readingsList
+        .map(
+          (reading) => _resolveCombinedCsvCropId(
+            reading: reading,
+            cropParamsById: cropParamsById,
+            fallbackCropId: fallbackCropId,
+          ),
+        )
+        .whereType<int>()
+        .toSet();
+  }
+
   @override
   Future<String> exportSensorCsv({
     List<int>? readingIds,
@@ -199,36 +298,59 @@ class LocalExportService implements ExportService {
     List<int>? readingIds,
     Rect? shareOrigin,
   }) async {
-    final sensorRepo = SensorRepository(_db);
-    final cropRepo = CropRepository(_db);
-
-    final readings = readingIds == null
-        ? await sensorRepo.getAllReadings()
-        : await sensorRepo.getReadingsByIds(readingIds);
-    final cropParamsList = await cropRepo.getAllCropParams();
-
-    // Get all images grouped by cropParamsId
-    final imagesByCropId = <int, List<String>>{};
-    for (final crop in cropParamsList) {
-      final images = await cropRepo.getImagesForCrop(crop.id);
-      imagesByCropId[crop.id] = images
-          .map((img) => img.relabelledFileName)
-          .toList();
-    }
-
-    final rows = buildCombinedCsvRows(
-      readings: readings,
-      cropParamsList: cropParamsList,
-      imagesByCropId: imagesByCropId,
+    final exportData = await _loadCombinedExportData(readingIds);
+    final file = await _createCombinedCsvFile(
+      readings: exportData.readings,
+      cropParamsList: exportData.cropParamsList,
+      imagesByCropId: exportData.imagesByCropId,
     );
 
-    final csvData = const ListToCsvConverter().convert(rows);
-    final file = await _createTempFile('combined_data.csv');
-    await file.writeAsString(csvData);
     await Share.shareXFiles([
       XFile(file.path),
     ], sharePositionOrigin: shareOrigin);
     return 'Combined CSV exported and share sheet opened.';
+  }
+
+  @override
+  Future<String> exportCombinedCsvAndImages({
+    List<int>? readingIds,
+    Rect? shareOrigin,
+  }) async {
+    final exportData = await _loadCombinedExportData(readingIds);
+    final file = await _createCombinedCsvFile(
+      readings: exportData.readings,
+      cropParamsList: exportData.cropParamsList,
+      imagesByCropId: exportData.imagesByCropId,
+    );
+
+    final cropRepo = CropRepository(_db);
+    final cropIds = combinedExportCropIds(
+      readings: exportData.readings,
+      cropParamsList: exportData.cropParamsList,
+    );
+    final sharedFiles = <XFile>[XFile(file.path)];
+
+    for (final cropId in cropIds) {
+      final images = await cropRepo.getImagesForCrop(cropId);
+      for (final image in images) {
+        final imageFile = File(image.filePath);
+        if (await imageFile.exists()) {
+          sharedFiles.add(XFile(imageFile.path));
+        }
+      }
+    }
+
+    await Share.shareXFiles(
+      sharedFiles,
+      text: 'Combined sensor data and linked crop images',
+      sharePositionOrigin: shareOrigin,
+    );
+
+    final imageCount = sharedFiles.length - 1;
+    if (imageCount == 0) {
+      return 'Combined CSV exported. No linked crop images were found.';
+    }
+    return 'Combined CSV and $imageCount image(s) exported and share sheet opened.';
   }
 
   @override

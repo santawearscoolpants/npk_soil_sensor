@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 class _FakeExportService implements ExportService {
   int sensorCsvCalls = 0;
+  int exportAllCalls = 0;
   Rect? lastShareOrigin;
 
   @override
@@ -25,6 +26,16 @@ class _FakeExportService implements ExportService {
     List<int>? readingIds,
     Rect? shareOrigin,
   }) async => 'Combined CSV exported.';
+
+  @override
+  Future<String> exportCombinedCsvAndImages({
+    List<int>? readingIds,
+    Rect? shareOrigin,
+  }) async {
+    exportAllCalls += 1;
+    lastShareOrigin = shareOrigin;
+    return 'Combined CSV and 2 image(s) exported and share sheet opened.';
+  }
 
   @override
   Future<String> exportPdfReport({int? sessionId, Rect? shareOrigin}) async =>
@@ -93,5 +104,34 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Storage Permission Needed'), findsNothing);
+  });
+
+  testWidgets('export all uses combined CSV and linked images flow', (
+    tester,
+  ) async {
+    final exportService = _FakeExportService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          exportServiceProvider.overrideWithValue(exportService),
+          permissionServiceProvider.overrideWithValue(_FakePermissionService()),
+          sessionStoreProvider.overrideWithValue(_FakeSessionStore()),
+        ],
+        child: const MaterialApp(home: ExportScreen()),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Export All'));
+    await tester.pumpAndSettle();
+
+    expect(exportService.exportAllCalls, 1);
+    expect(exportService.lastShareOrigin, isNotNull);
+    expect(
+      find.text('Combined CSV and 2 image(s) exported and share sheet opened.'),
+      findsOneWidget,
+    );
   });
 }

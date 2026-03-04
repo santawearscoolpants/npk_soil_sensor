@@ -281,4 +281,77 @@ void main() {
       );
     });
   });
+
+  group('LocalExportService export-all crop image selection', () {
+    late AppDatabase db;
+    late LocalExportService service;
+
+    setUp(() {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      service = LocalExportService(db, _FakeSessionStore());
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('collects only crop ids resolved into the combined export', () {
+      final cropIds = service.combinedExportCropIds(
+        readings: [
+          SensorReading(
+            id: 1,
+            timestamp: DateTime.utc(2026, 1, 2, 3, 4, 5),
+            moisture: 31.5,
+            ec: 1.8,
+            temperature: 27.4,
+            ph: 6.7,
+            nitrogen: 14,
+            phosphorus: 9,
+            potassium: 22,
+            salinity: 0.6,
+            tds: 420.0,
+            cropParamsId: 7,
+          ),
+          SensorReading(
+            id: 2,
+            timestamp: DateTime.utc(2026, 1, 2, 3, 5, 5),
+            moisture: 32.0,
+            ec: 1.9,
+            temperature: 27.6,
+            ph: 6.6,
+            nitrogen: 15,
+            phosphorus: 10,
+            potassium: 23,
+            salinity: 0.7,
+            tds: 430.0,
+            cropParamsId: 7,
+          ),
+        ],
+        cropParamsList: [
+          CropParam(
+            id: 7,
+            createdAt: DateTime.utc(2026, 1, 1),
+            soilType: 'Loam',
+            soilProperties: 'Well drained',
+            leafColor: 'Dark green',
+            stemDescription: 'Firm',
+            heightCm: 42.0,
+            notes: 'Healthy crop',
+          ),
+          CropParam(
+            id: 9,
+            createdAt: DateTime.utc(2026, 1, 3),
+            soilType: 'Clay',
+            soilProperties: 'Dense',
+            leafColor: 'Pale green',
+            stemDescription: 'Thin',
+            heightCm: 18.0,
+            notes: 'Needs nutrients',
+          ),
+        ],
+      );
+
+      expect(cropIds, {7});
+    });
+  });
 }
