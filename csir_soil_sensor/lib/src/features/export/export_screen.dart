@@ -269,6 +269,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           Colors.amber,
         ],
         ['Salinity', 'g/L', (SensorReading r) => r.salinity, Colors.cyan],
+        ['TDS', 'ppm', (SensorReading r) => r.tds, Colors.indigo],
       ];
 
       // Build and capture each chart
