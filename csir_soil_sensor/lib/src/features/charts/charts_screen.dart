@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../core/measurement_units.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
 import '../../services/session_store.dart';
@@ -242,17 +243,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         );
       case 8: // Salinity
         return (
-          low: CropThresholds.salinityLow,
-          high: CropThresholds.salinityHigh,
+          low: salinityToMgPerL(CropThresholds.salinityLow),
+          high: salinityToMgPerL(CropThresholds.salinityHigh),
           info:
-              'Ideal: ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} g/L',
+              'Ideal: ${salinityToMgPerL(CropThresholds.salinityLow).toStringAsFixed(0)}-${salinityToMgPerL(CropThresholds.salinityHigh).toStringAsFixed(0)} $salinityDisplayUnit',
         );
       case 9: // TDS - reuse salinity thresholds as an approximation
         return (
-          low: CropThresholds.salinityLow,
-          high: CropThresholds.salinityHigh,
+          low: salinityToMgPerL(CropThresholds.salinityLow),
+          high: salinityToMgPerL(CropThresholds.salinityHigh),
           info:
-              'Ideal (approx): ${CropThresholds.salinityLow}-${CropThresholds.salinityHigh} ppm',
+              'Ideal (approx): ${salinityToMgPerL(CropThresholds.salinityLow).toStringAsFixed(0)}-${salinityToMgPerL(CropThresholds.salinityHigh).toStringAsFixed(0)} $tdsDisplayUnit',
         );
       default:
         return (low: 0, high: 0, info: '');
@@ -984,16 +985,16 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               sessionReadings,
                               8,
                               'Salinity',
-                              'g/L',
-                              (r) => r.salinity,
+                              salinityDisplayUnit,
+                              (r) => salinityToMgPerL(r.salinity),
                               Colors.cyan,
                             ),
                             _buildComparisonChart(
                               sessionReadings,
                               9,
                               'TDS',
-                              'ppm',
-                              (r) => r.tds,
+                              tdsDisplayUnit,
+                              (r) => tdsToMgPerL(r.tds),
                               Colors.deepPurple,
                             ),
                           ],
@@ -1187,8 +1188,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               displayReadings,
                               8,
                               'Salinity',
-                              'g/L',
-                              (r) => r.salinity,
+                              salinityDisplayUnit,
+                              (r) => salinityToMgPerL(r.salinity),
                               Colors.cyan,
                               originalCount: sortedReadings.length,
                             ),
@@ -1196,8 +1197,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                               displayReadings,
                               9,
                               'TDS',
-                              'ppm',
-                              (r) => r.tds,
+                              tdsDisplayUnit,
+                              (r) => tdsToMgPerL(r.tds),
                               Colors.deepPurple,
                               originalCount: sortedReadings.length,
                             ),
@@ -1580,16 +1581,16 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             _buildCompactChart(
               readings,
               'Salinity',
-              'g/L',
-              (r) => r.salinity,
+              salinityDisplayUnit,
+              (r) => salinityToMgPerL(r.salinity),
               Colors.cyan,
             ),
             const SizedBox(height: 24),
             _buildCompactChart(
               readings,
               'TDS',
-              'ppm',
-              (r) => r.tds,
+              tdsDisplayUnit,
+              (r) => tdsToMgPerL(r.tds),
               Colors.deepPurple,
             ),
           ],
@@ -2246,8 +2247,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
               sessionReadings,
               0,
               'Salinity',
-              'g/L',
-              (r) => r.salinity,
+              salinityDisplayUnit,
+              (r) => salinityToMgPerL(r.salinity),
               Colors.cyan,
               customKey: allViewKeys[7],
               isScrollable: true,
@@ -2257,8 +2258,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
               sessionReadings,
               0,
               'TDS',
-              'ppm',
-              (r) => r.tds,
+              tdsDisplayUnit,
+              (r) => tdsToMgPerL(r.tds),
               Colors.deepPurple,
               customKey: allViewKeys[8],
               isScrollable: true,

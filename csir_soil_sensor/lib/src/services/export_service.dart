@@ -10,6 +10,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/measurement_units.dart';
 import '../data/db/app_database.dart';
 import '../data/repositories/crop_repository.dart';
 import '../data/repositories/sensor_repository.dart';
@@ -42,8 +43,8 @@ class LocalExportService implements ExportService {
     'nitrogen (mg/kg)',
     'phosphorus (mg/kg)',
     'potassium (mg/kg)',
-    'salinity (g/L)',
-    'tds (ppm)',
+    'salinity (mg/L)',
+    'tds (mg/L)',
     'soilType',
     'soilProperties',
     'leafColor',
@@ -63,8 +64,8 @@ class LocalExportService implements ExportService {
     'nitrogen (mg/kg)',
     'phosphorus (mg/kg)',
     'potassium (mg/kg)',
-    'salinity (g/L)',
-    'tds (ppm)',
+    'salinity (mg/L)',
+    'tds (mg/L)',
   ];
 
   final AppDatabase _db;
@@ -102,8 +103,8 @@ class LocalExportService implements ExportService {
           reading.nitrogen,
           reading.phosphorus,
           reading.potassium,
-          reading.salinity,
-          reading.tds,
+          salinityToMgPerL(reading.salinity),
+          tdsToMgPerL(reading.tds),
         ];
       }),
     ];
@@ -149,8 +150,8 @@ class LocalExportService implements ExportService {
           reading.nitrogen,
           reading.phosphorus,
           reading.potassium,
-          reading.salinity,
-          reading.tds,
+          salinityToMgPerL(reading.salinity),
+          tdsToMgPerL(reading.tds),
           crop?.soilType ?? '',
           crop?.soilProperties ?? '',
           crop?.leafColor ?? '',
@@ -619,11 +620,11 @@ class LocalExportService implements ExportService {
                           ),
                           _buildTableRow(
                             'Salinity',
-                            data.avgSalinity.toStringAsFixed(2),
+                            '${salinityToMgPerL(data.avgSalinity).toStringAsFixed(0)} $salinityDisplayUnit',
                           ),
                           _buildTableRow(
                             'TDS',
-                            '${data.avgTds.toStringAsFixed(0)} ppm',
+                            '${tdsToMgPerL(data.avgTds).toStringAsFixed(0)} $tdsDisplayUnit',
                           ),
                         ],
                       ),

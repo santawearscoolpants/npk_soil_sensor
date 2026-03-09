@@ -72,8 +72,8 @@ void main() {
         'nitrogen (mg/kg)',
         'phosphorus (mg/kg)',
         'potassium (mg/kg)',
-        'salinity (g/L)',
-        'tds (ppm)',
+        'salinity (mg/L)',
+        'tds (mg/L)',
       ]);
       expect(rows.first, isNot(contains('ecCal')));
       expect(rows.first, isNot(contains('nConv')));
@@ -88,7 +88,7 @@ void main() {
         14,
         9,
         22,
-        0.6,
+        600.0,
         420.0,
       ]);
     });
@@ -152,8 +152,8 @@ void main() {
         'nitrogen (mg/kg)',
         'phosphorus (mg/kg)',
         'potassium (mg/kg)',
-        'salinity (g/L)',
-        'tds (ppm)',
+        'salinity (mg/L)',
+        'tds (mg/L)',
         'soilType',
         'soilProperties',
         'leafColor',
@@ -175,7 +175,7 @@ void main() {
         14,
         9,
         22,
-        0.6,
+        600.0,
         420.0,
         'Loam',
         'Well drained',

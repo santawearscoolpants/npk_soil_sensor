@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/measurement_units.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../services/bluetooth_service.dart';
@@ -320,12 +321,14 @@ class _LiveReadingCard extends StatelessWidget {
                 ),
                 _MetricChip(
                   label: 'Salinity',
-                  value: reading.salinity.toStringAsFixed(2),
+                  value:
+                      '${salinityToMgPerL(reading.salinity).toStringAsFixed(0)} $salinityDisplayUnit',
                   style: chipStyle,
                 ),
                 _MetricChip(
                   label: 'TDS',
-                  value: '${reading.tds} ppm',
+                  value:
+                      '${tdsToMgPerL(reading.tds).toStringAsFixed(0)} $tdsDisplayUnit',
                   style: chipStyle,
                 ),
               ],

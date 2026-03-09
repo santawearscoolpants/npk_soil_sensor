@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/measurement_units.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../data/repositories/sensor_repository.dart';
@@ -360,7 +361,11 @@ class _SessionDetailsDialogState extends State<_SessionDetailsDialog> {
               value: '${avgTemp.toStringAsFixed(1)} °C',
             ),
             _DetailRow(label: 'pH', value: avgPH.toStringAsFixed(1)),
-            _DetailRow(label: 'TDS', value: '${avgTds.toStringAsFixed(0)} ppm'),
+            _DetailRow(
+              label: 'TDS',
+              value:
+                  '${tdsToMgPerL(avgTds).toStringAsFixed(0)} $tdsDisplayUnit',
+            ),
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),

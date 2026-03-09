@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../core/measurement_units.dart';
 import '../../services/export_service.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/sensor_repository.dart';
@@ -268,8 +269,18 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           (SensorReading r) => r.potassium.toDouble(),
           Colors.amber,
         ],
-        ['Salinity', 'g/L', (SensorReading r) => r.salinity, Colors.cyan],
-        ['TDS', 'ppm', (SensorReading r) => r.tds, Colors.indigo],
+        [
+          'Salinity',
+          salinityDisplayUnit,
+          (SensorReading r) => salinityToMgPerL(r.salinity),
+          Colors.cyan,
+        ],
+        [
+          'TDS',
+          tdsDisplayUnit,
+          (SensorReading r) => tdsToMgPerL(r.tds),
+          Colors.indigo,
+        ],
       ];
 
       // Build and capture each chart
