@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:csir_soil_sensor/src/data/db/app_database.dart';
 import 'package:csir_soil_sensor/src/services/export_service.dart';
 import 'package:csir_soil_sensor/src/services/session_store.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 class _FakeSessionStore extends SessionStore {
   @override
@@ -353,5 +356,51 @@ void main() {
 
       expect(cropIds, {7});
     });
+  });
+
+  group('LocalExportService image path resolution', () {
+    late AppDatabase db;
+    late LocalExportService service;
+
+    setUp(() {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      service = LocalExportService(db, _FakeSessionStore());
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test(
+      'resolves image from fallback crop_images directory when stored path is stale',
+      () async {
+        final appDir = Directory.systemTemp.createTempSync(
+          'crop_image_export_test',
+        );
+        addTearDown(() async {
+          if (await appDir.exists()) {
+            await appDir.delete(recursive: true);
+          }
+        });
+
+        final imagesDir = Directory(p.join(appDir.path, 'crop_images'))
+          ..createSync(recursive: true);
+        final fallbackFile = File(p.join(imagesDir.path, 'Crop_001.jpg'))
+          ..writeAsStringSync('fake image bytes');
+
+        final resolved = await service.resolveCropImageFileForTest(
+          CropImage(
+            id: 1,
+            cropParamsId: 7,
+            filePath: p.join(appDir.path, 'missing', 'Crop_001.jpg'),
+            relabelledFileName: 'Crop_001.jpg',
+            createdAt: DateTime.utc(2026, 1, 1),
+          ),
+          appDocumentsPath: appDir.path,
+        );
+
+        expect(resolved?.path, fallbackFile.path);
+      },
+    );
   });
 }

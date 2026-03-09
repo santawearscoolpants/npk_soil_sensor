@@ -248,6 +248,35 @@ class LocalExportService implements ExportService {
     return file;
   }
 
+  Future<File?> _resolveCropImageFile(
+    CropImage image, {
+    String? appDocumentsPath,
+  }) async {
+    final directFile = File(image.filePath);
+    if (await directFile.exists()) {
+      return directFile;
+    }
+
+    final appDirPath =
+        appDocumentsPath ?? (await getApplicationDocumentsDirectory()).path;
+    final fallbackFile = File(
+      p.join(appDirPath, 'crop_images', image.relabelledFileName),
+    );
+    if (await fallbackFile.exists()) {
+      return fallbackFile;
+    }
+
+    return null;
+  }
+
+  @visibleForTesting
+  Future<File?> resolveCropImageFileForTest(
+    CropImage image, {
+    String? appDocumentsPath,
+  }) {
+    return _resolveCropImageFile(image, appDocumentsPath: appDocumentsPath);
+  }
+
   @visibleForTesting
   Set<int> combinedExportCropIds({
     required Iterable<SensorReading> readings,
@@ -333,8 +362,8 @@ class LocalExportService implements ExportService {
     for (final cropId in cropIds) {
       final images = await cropRepo.getImagesForCrop(cropId);
       for (final image in images) {
-        final imageFile = File(image.filePath);
-        if (await imageFile.exists()) {
+        final imageFile = await _resolveCropImageFile(image);
+        if (imageFile != null) {
           sharedFiles.add(XFile(imageFile.path));
         }
       }
@@ -764,20 +793,13 @@ class LocalExportService implements ExportService {
   @override
   Future<String> exportImages({Rect? shareOrigin}) async {
     final cropRepo = CropRepository(_db);
-    final allCropParams = await cropRepo.getAllCropParams();
-
-    if (allCropParams.isEmpty) {
-      return 'No crop parameters found. No images to export.';
-    }
+    final allImages = await cropRepo.getAllImages();
 
     final List<XFile> imageFiles = [];
-    for (final crop in allCropParams) {
-      final images = await cropRepo.getImagesForCrop(crop.id);
-      for (final image in images) {
-        final file = File(image.filePath);
-        if (await file.exists()) {
-          imageFiles.add(XFile(file.path));
-        }
+    for (final image in allImages) {
+      final file = await _resolveCropImageFile(image);
+      if (file != null) {
+        imageFiles.add(XFile(file.path));
       }
     }
 
