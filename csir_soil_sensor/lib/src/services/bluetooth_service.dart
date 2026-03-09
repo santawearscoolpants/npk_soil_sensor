@@ -80,38 +80,73 @@ class LiveReading {
   final double? kConv; // K converted (cmol(+)/kg)
   final double? kCal; // K calibrated (cmol(+)/kg)
 
-  bool get hasDerivedValues =>
+  static const double _ecCalibrationSlope = 0.220636585;
+  static const double _ecCalibrationOffset = 0.06098882155;
+  static const double _phCalibrationSlope = 0.06749371859;
+  static const double _phCalibrationOffset = 5.126893844;
+  static const double _nCalibrationSlope = 0.005542328042;
+  static const double _nCalibrationOffset = 0.1148412698;
+  static const double _pCalibrationSlope = 0.0414315776;
+  static const double _pCalibrationOffset = 7.840383242;
+  static const double _kCalibrationSlope = 0.3580341716;
+  static const double _kCalibrationOffset = 0.1642282588;
+
+  bool get hasConvertedValues =>
       ecConv != null ||
-      ecCal != null ||
       phConv != null ||
-      phCal != null ||
       nConv != null ||
-      nCal != null ||
       pConv != null ||
+      kConv != null;
+
+  bool get hasCalibratedValues =>
+      ecCal != null ||
+      phCal != null ||
+      nCal != null ||
       pCal != null ||
-      kConv != null ||
       kCal != null;
 
-  double get ecDisplayValue => ecCal ?? ecConv ?? ec;
+  bool get hasDerivedValues => hasConvertedValues || hasCalibratedValues;
+
+  double get ecConvertedValue => ecConv ?? (ec / 1000.0);
+  double get phConvertedValue => phConv ?? ph;
+  double get nitrogenConvertedValue => nConv ?? (nitrogen / 10000.0);
+  double get phosphorusConvertedValue => pConv ?? phosphorus.toDouble();
+  double get potassiumConvertedValue => kConv ?? (potassium / 391.0);
+
+  double get ecCalibratedValue =>
+      ecCal ?? (_ecCalibrationSlope * ecConvertedValue) + _ecCalibrationOffset;
+  double get phCalibratedValue =>
+      phCal ?? (_phCalibrationSlope * phConvertedValue) + _phCalibrationOffset;
+  double get nitrogenCalibratedValue =>
+      nCal ??
+      (_nCalibrationSlope * nitrogenConvertedValue) + _nCalibrationOffset;
+  double get phosphorusCalibratedValue =>
+      pCal ??
+      (_pCalibrationSlope * phosphorusConvertedValue) + _pCalibrationOffset;
+  double get potassiumCalibratedValue =>
+      kCal ??
+      (_kCalibrationSlope * potassiumConvertedValue) + _kCalibrationOffset;
+
+  double get ecDisplayValue => ecConv ?? ecCal ?? ec;
   String get ecDisplayUnit =>
-      (ecCal != null || ecConv != null) ? 'dS/m' : 'mS/cm';
+      (ecConv != null || ecCal != null) ? 'dS/m' : 'mS/cm';
 
-  double get phDisplayValue => phCal ?? phConv ?? ph;
+  double get phDisplayValue => phConv ?? phCal ?? ph;
 
-  double get nitrogenDisplayValue => nCal ?? nConv ?? nitrogen.toDouble();
+  double get nitrogenDisplayValue => nConv ?? nCal ?? nitrogen.toDouble();
   String get nitrogenDisplayUnit =>
-      (nCal != null || nConv != null) ? '%' : 'mg/kg';
-  int get nitrogenDisplayPrecision => (nCal != null || nConv != null) ? 4 : 0;
+      (nConv != null || nCal != null) ? '%' : 'mg/kg';
+  int get nitrogenDisplayPrecision => (nConv != null || nCal != null) ? 4 : 0;
 
-  double get phosphorusDisplayValue => pCal ?? pConv ?? phosphorus.toDouble();
+  double get phosphorusDisplayValue => pConv ?? pCal ?? phosphorus.toDouble();
   String get phosphorusDisplayUnit =>
-      (pCal != null || pConv != null) ? 'mg/kg' : 'mg/kg';
-  int get phosphorusDisplayPrecision => (pCal != null || pConv != null) ? 1 : 0;
+      (pConv != null || pCal != null) ? 'mg/kg' : 'mg/kg';
+  int get phosphorusDisplayPrecision => (pConv != null || pCal != null) ? 1 : 0;
 
-  double get potassiumDisplayValue => kCal ?? kConv ?? potassium.toDouble();
+  double get potassiumDisplayValue => kConv ?? kCal ?? potassium.toDouble();
   String get potassiumDisplayUnit =>
-      (kCal != null || kConv != null) ? 'cmol(+)/kg' : 'mg/kg';
-  int get potassiumDisplayPrecision => (kCal != null || kConv != null) ? 3 : 0;
+      (kConv != null || kCal != null) ? 'cmol(+)/kg' : 'mg/kg';
+  int get potassiumDisplayPrecision => (kConv != null || kCal != null) ? 3 : 0;
 
   static num? _readNum(
     Map<String, dynamic> json,

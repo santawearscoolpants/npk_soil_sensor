@@ -196,10 +196,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                   child: Column(
                     children: [
                       _LiveReadingCard(reading: bleState.latestReading!),
-                      if (bleState.latestReading!.hasDerivedValues)
-                        _CalibratedReadingCard(
-                          reading: bleState.latestReading!,
-                        ),
+                      _CalibratedReadingCard(reading: bleState.latestReading!),
                     ],
                   ),
                 ),
@@ -364,7 +361,9 @@ class _CalibratedReadingCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Values reported by the sensor conversion/calibration pipeline',
+              reading.hasCalibratedValues
+                  ? 'Calibrated outputs reported by the sensor pipeline'
+                  : 'Calibrated outputs computed locally from the current reading',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -372,66 +371,34 @@ class _CalibratedReadingCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (reading.ecConv != null)
-                  _MetricChip(
-                    label: 'EC (conv)',
-                    value: '${reading.ecConv!.toStringAsFixed(3)} dS/m',
-                    style: chipStyle,
-                  ),
-                if (reading.ecCal != null)
-                  _MetricChip(
-                    label: 'EC (cal)',
-                    value: '${reading.ecCal!.toStringAsFixed(3)} dS/m',
-                    style: chipStyle,
-                  ),
-                if (reading.phConv != null)
-                  _MetricChip(
-                    label: 'pH (conv)',
-                    value: reading.phConv!.toStringAsFixed(2),
-                    style: chipStyle,
-                  ),
-                if (reading.phCal != null)
-                  _MetricChip(
-                    label: 'pH (cal)',
-                    value: reading.phCal!.toStringAsFixed(2),
-                    style: chipStyle,
-                  ),
-                if (reading.nConv != null)
-                  _MetricChip(
-                    label: 'N (conv)',
-                    value: '${reading.nConv!.toStringAsFixed(4)} %',
-                    style: chipStyle,
-                  ),
-                if (reading.nCal != null)
-                  _MetricChip(
-                    label: 'N (cal)',
-                    value: '${reading.nCal!.toStringAsFixed(4)} %',
-                    style: chipStyle,
-                  ),
-                if (reading.pConv != null)
-                  _MetricChip(
-                    label: 'P (conv)',
-                    value: '${reading.pConv!.toStringAsFixed(1)} mg/kg',
-                    style: chipStyle,
-                  ),
-                if (reading.pCal != null)
-                  _MetricChip(
-                    label: 'P (cal)',
-                    value: '${reading.pCal!.toStringAsFixed(1)} mg/kg',
-                    style: chipStyle,
-                  ),
-                if (reading.kConv != null)
-                  _MetricChip(
-                    label: 'K (conv)',
-                    value: '${reading.kConv!.toStringAsFixed(3)} cmol(+)/kg',
-                    style: chipStyle,
-                  ),
-                if (reading.kCal != null)
-                  _MetricChip(
-                    label: 'K (cal)',
-                    value: '${reading.kCal!.toStringAsFixed(3)} cmol(+)/kg',
-                    style: chipStyle,
-                  ),
+                _MetricChip(
+                  label: 'EC',
+                  value: '${reading.ecCalibratedValue.toStringAsFixed(3)} dS/m',
+                  style: chipStyle,
+                ),
+                _MetricChip(
+                  label: 'pH',
+                  value: reading.phCalibratedValue.toStringAsFixed(2),
+                  style: chipStyle,
+                ),
+                _MetricChip(
+                  label: 'Nitrogen (N)',
+                  value:
+                      '${reading.nitrogenCalibratedValue.toStringAsFixed(4)} %',
+                  style: chipStyle,
+                ),
+                _MetricChip(
+                  label: 'Phosphorus (P)',
+                  value:
+                      '${reading.phosphorusCalibratedValue.toStringAsFixed(1)} mg/kg',
+                  style: chipStyle,
+                ),
+                _MetricChip(
+                  label: 'Potassium (K)',
+                  value:
+                      '${reading.potassiumCalibratedValue.toStringAsFixed(3)} cmol(+)/kg',
+                  style: chipStyle,
+                ),
               ],
             ),
           ],

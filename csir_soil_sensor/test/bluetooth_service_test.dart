@@ -105,6 +105,34 @@ void main() {
     expect(reading.potassiumDisplayUnit, 'cmol(+)/kg');
   });
 
+  test(
+    'LiveReading computes calibrated values when firmware cal fields are absent',
+    () {
+      final reading = LiveReading(
+        timestamp: 123,
+        moisture: 34.2,
+        ec: 61,
+        temperature: 27.4,
+        ph: 5.73,
+        nitrogen: 1148,
+        phosphorus: 8,
+        potassium: 64,
+        salinity: 0.0,
+        tds: 0,
+        ecConv: 0.061,
+        nConv: 0.1148,
+        pConv: 7.8,
+        kConv: 0.164,
+      );
+
+      expect(reading.ecCalibratedValue, closeTo(0.0744, 0.0001));
+      expect(reading.phCalibratedValue, closeTo(5.5137, 0.0001));
+      expect(reading.nitrogenCalibratedValue, closeTo(0.1155, 0.0001));
+      expect(reading.phosphorusCalibratedValue, closeTo(8.1636, 0.0001));
+      expect(reading.potassiumCalibratedValue, closeTo(0.2229, 0.0001));
+    },
+  );
+
   test('isSensorReadingPayload ignores unrelated BLE JSON objects', () {
     expect(isSensorReadingPayload({'message': 'Hello from ESP32!'}), isFalse);
     expect(isSensorReadingPayload({'timestamp': 123}), isFalse);

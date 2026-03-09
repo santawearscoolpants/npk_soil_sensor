@@ -73,7 +73,7 @@ void main() {
     expect(find.text('Latest Reading'), findsOneWidget);
     expect(find.text('Calibrated Values'), findsOneWidget);
     expect(find.text('34.2 %'), findsOneWidget);
-    expect(find.text('EC (conv)'), findsOneWidget);
+    expect(find.text('EC'), findsNWidgets(2));
     expect(
       find.textContaining('Connected (service discovery failed: timeout)'),
       findsOneWidget,
