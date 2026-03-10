@@ -45,11 +45,11 @@ class CropThresholds {
   static const String potassiumTooltip =
       'Potassium (K) in mg/kg. Ideal: 30-100. Low: weak stems, poor fruit quality. High: usually not harmful.';
 
-  // Salinity: 0.5-1.5 dS/m (or mS/cm) ideal
+  // Salinity source values are stored in g/L; the UI presents them as mg/L.
   static const double salinityLow = 0.5;
   static const double salinityHigh = 1.5;
   static const String salinityTooltip =
-      'Soil salinity. Ideal: 0.5-1.5. High salinity can burn roots and reduce water uptake.';
+      'Soil salinity. Ideal: 500-1500 mg/L. High salinity can burn roots and reduce water uptake.';
 
   /// Returns a color based on value and thresholds.
   /// Green: within ideal range (middle 50% of range)
@@ -72,4 +72,3 @@ class CropThresholds {
     return Colors.green;
   }
 }
-
