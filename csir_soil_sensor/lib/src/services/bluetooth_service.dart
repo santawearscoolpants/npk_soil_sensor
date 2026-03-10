@@ -12,6 +12,105 @@ import 'bluetooth_constants.dart';
 import 'permission_service.dart';
 import 'session_store.dart';
 
+/// Result of splitting a raw BLE payload into complete JSON messages plus remainder.
+class JsonSplitResult {
+  final List<String> messages;
+  final String remainder;
+
+  const JsonSplitResult({required this.messages, required this.remainder});
+}
+
+/// Splits a raw BLE payload into zero or more complete JSON objects and a trailing remainder.
+///
+/// - Drops any non-JSON prefix noise (e.g. "Hello from ESP32!")
+/// - Supports concatenated JSON objects in a single chunk
+/// - Leaves incomplete trailing JSON in [remainder] for the next pass
+JsonSplitResult splitJsonPayloads(String payload) {
+  // Find the first '{' that starts JSON. Anything before is treated as noise.
+  final start = payload.indexOf('{');
+  if (start == -1) {
+    // No JSON yet.
+    return const JsonSplitResult(messages: [], remainder: '');
+  }
+
+  final working = payload.substring(start);
+  final messages = <String>[];
+
+  var depth = 0;
+  var inString = false;
+  var escape = false;
+  var lastStart = 0;
+
+  for (var i = 0; i < working.length; i++) {
+    final c = working[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (c == r'\\') {
+        escape = true;
+      } else if (c == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (c == '"') {
+      inString = true;
+    } else if (c == '{') {
+      if (depth == 0) {
+        lastStart = i;
+      }
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) {
+        // Completed one top-level JSON object.
+        messages.add(working.substring(lastStart, i + 1));
+        lastStart = i + 1;
+      }
+    }
+  }
+
+  final remainder = depth > 0 ? working.substring(lastStart) : '';
+  return JsonSplitResult(messages: messages, remainder: remainder);
+}
+
+/// Heuristic to decide if a decoded JSON map looks like a sensor reading payload.
+///
+/// Supports both:
+/// - legacy/raw firmware keys (moisture/ec/temperature/ph/nitrogen/...)
+/// - alternate calibrated firmware keys (moisture_pct/ec_dSm/temperature_c/n_percent/...)
+bool isSensorReadingPayload(Map<String, dynamic> json) {
+  bool hasAllKeys(List<String> keys) => keys.every(json.containsKey);
+
+  const rawKeys = [
+    'timestamp',
+    'moisture',
+    'ec',
+    'temperature',
+    'ph',
+    'nitrogen',
+    'phosphorus',
+    'potassium',
+    'salinity',
+  ];
+
+  const altKeys = [
+    'timestamp',
+    'moisture_pct',
+    'ec_dSm',
+    'temperature_c',
+    'ph',
+    'n_percent',
+    'p_mgkg',
+    'k_cmolkg',
+    'salinity',
+  ];
+
+  return hasAllKeys(rawKeys) || hasAllKeys(altKeys);
+}
+
 class LiveReading {
   LiveReading({
     required this.timestamp,
@@ -62,18 +161,102 @@ class LiveReading {
   final double? kConv;  // K converted (cmol(+)/kg)
   final double? kCal;   // K calibrated (cmol(+)/kg)
 
+  // ===== Display helpers (used by UI + tests) =====
+  String get nitrogenDisplayUnit => nConv != null ? '%' : 'mg/kg';
+  String get phosphorusDisplayUnit => 'mg/kg';
+  String get potassiumDisplayUnit => kConv != null ? 'cmol(+)/kg' : 'mg/kg';
+
+  double get ecConvertedValue => ecConv ?? (ec / 1000.0);
+  double get phConvertedValue => phConv ?? ph;
+  double get nitrogenConvertedValue => nConv ?? (nitrogen / 10000.0);
+  double get phosphorusConvertedValue => pConv ?? phosphorus.toDouble();
+  double get potassiumConvertedValue => kConv ?? (potassium / 391.0);
+
+  double get ecCalibratedValue =>
+      ecCal ?? (0.220636585 * ecConvertedValue + 0.06098882155);
+  double get phCalibratedValue =>
+      phCal ?? (0.06749371859 * phConvertedValue + 5.126893844);
+  double get nitrogenCalibratedValue =>
+      nCal ?? (0.005542328042 * nitrogenConvertedValue + 0.1148412698);
+  double get phosphorusCalibratedValue =>
+      pCal ?? (0.0414315776 * phosphorusConvertedValue + 7.840383242);
+  double get potassiumCalibratedValue =>
+      kCal ?? (0.3580341716 * potassiumConvertedValue + 0.1642282588);
+
+  static int _asInt(dynamic v, {int fallback = 0}) {
+    if (v == null) return fallback;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? (double.tryParse(v)?.toInt() ?? fallback);
+    return fallback;
+  }
+
+  static double _asDouble(dynamic v, {double fallback = 0}) {
+    if (v == null) return fallback;
+    if (v is double) return v;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
   factory LiveReading.fromJson(Map<String, dynamic> json) {
+    // Support both the raw firmware keys and alternate calibrated-key payloads.
+    final isAlt = json.containsKey('moisture_pct') ||
+        json.containsKey('temperature_c') ||
+        json.containsKey('ec_dSm') ||
+        json.containsKey('n_percent') ||
+        json.containsKey('p_mgkg') ||
+        json.containsKey('k_cmolkg');
+
+    if (isAlt) {
+      final ts = _asInt(json['timestamp']);
+      final moisture = _asDouble(json['moisture_pct']);
+      final temp = _asDouble(json['temperature_c']);
+      final ph = _asDouble(json['ph']);
+      final salinity = _asDouble(json['salinity']);
+      final tds = _asInt(json['tds'], fallback: 0);
+
+      final ecConv = _asDouble(json['ec_dSm']);
+      final nConv = _asDouble(json['n_percent']);
+      final pConv = _asDouble(json['p_mgkg']);
+      final kConv = _asDouble(json['k_cmolkg']);
+
+      // Back-fill raw fields for compatibility (approximate inverses of firmware conversions).
+      final ecRaw = (ecConv * 1000.0);
+      final nRaw = (nConv * 10000.0);
+      final pRaw = pConv;
+      final kRaw = (kConv * 391.0);
+
+      return LiveReading(
+        timestamp: ts,
+        moisture: moisture,
+        ec: ecRaw,
+        temperature: temp,
+        ph: ph,
+        nitrogen: nRaw.round(),
+        phosphorus: pRaw.round(),
+        potassium: kRaw.round(),
+        salinity: salinity,
+        tds: tds,
+        ecConv: ecConv,
+        phConv: ph,
+        nConv: nConv,
+        pConv: pConv,
+        kConv: kConv,
+      );
+    }
+
     return LiveReading(
-      timestamp: json['timestamp'] as int,
-      moisture: (json['moisture'] as num).toDouble(),
-      ec: (json['ec'] as num).toDouble(),
-      temperature: (json['temperature'] as num).toDouble(),
-      ph: (json['ph'] as num).toDouble(),
-      nitrogen: (json['nitrogen'] as num).toInt(),
-      phosphorus: (json['phosphorus'] as num).toInt(),
-      potassium: (json['potassium'] as num).toInt(),
-      salinity: (json['salinity'] as num).toDouble(),
-      tds: (json['tds'] as num).toInt(),
+      timestamp: _asInt(json['timestamp']),
+      moisture: _asDouble(json['moisture']),
+      ec: _asDouble(json['ec']),
+      temperature: _asDouble(json['temperature']),
+      ph: _asDouble(json['ph']),
+      nitrogen: _asInt(json['nitrogen']),
+      phosphorus: _asInt(json['phosphorus']),
+      potassium: _asInt(json['potassium']),
+      salinity: _asDouble(json['salinity']),
+      tds: _asInt(json['tds'], fallback: 0),
       ecConv: json['ec_conv'] != null ? (json['ec_conv'] as num).toDouble() : null,
       ecCal: json['ec_cal'] != null ? (json['ec_cal'] as num).toDouble() : null,
       phConv: json['ph_conv'] != null ? (json['ph_conv'] as num).toDouble() : null,
@@ -105,6 +288,7 @@ class BluetoothStateModel {
     this.devices = const [],
     this.connectedDeviceName,
     this.pendingCount = 0,
+    this.lastDataErrorMessage,
   });
 
   final String connectionStatus;
@@ -112,8 +296,26 @@ class BluetoothStateModel {
   final List<DiscoveredDevice> devices;
   final String? connectedDeviceName;
   final int pendingCount;
+  final String? lastDataErrorMessage;
 
   bool get isConnected => connectionStatus.startsWith('Connected');
+
+  // Convenience flags used by the Bluetooth UI.
+  bool get hasSelectedDevice => connectedDeviceName != null;
+  bool get isScanning => connectionStatus.startsWith('Scanning');
+  bool get isConnecting => connectionStatus.startsWith('Connecting');
+  bool get hasActiveDeviceSession =>
+      isConnected && connectedDeviceName != null;
+
+  /// True when the connection status indicates an error or warning state
+  /// that should be surfaced in the UI.
+  bool get hasConnectionIssue {
+    if (isScanning || isConnecting) return false;
+    if (isConnected) return false;
+    return connectionStatus.toLowerCase().contains('error') ||
+        connectionStatus.toLowerCase().contains('failed') ||
+        connectionStatus.toLowerCase().contains('disconnected');
+  }
 
   BluetoothStateModel copyWith({
     String? connectionStatus,
@@ -121,6 +323,7 @@ class BluetoothStateModel {
     List<DiscoveredDevice>? devices,
     String? connectedDeviceName,
     int? pendingCount,
+    String? lastDataErrorMessage,
   }) {
     return BluetoothStateModel(
       connectionStatus: connectionStatus ?? this.connectionStatus,
@@ -128,6 +331,8 @@ class BluetoothStateModel {
       devices: devices ?? this.devices,
       connectedDeviceName: connectedDeviceName ?? this.connectedDeviceName,
       pendingCount: pendingCount ?? this.pendingCount,
+      lastDataErrorMessage:
+          lastDataErrorMessage ?? this.lastDataErrorMessage,
     );
   }
 }
