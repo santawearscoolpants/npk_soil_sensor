@@ -205,19 +205,19 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
         return (
           low: CropThresholds.nitrogenLow,
           high: CropThresholds.nitrogenHigh,
-          info: 'Ideal: ${CropThresholds.nitrogenLow}-${CropThresholds.nitrogenHigh} ppm'
+          info: 'Ideal: ${CropThresholds.nitrogenLow}-${CropThresholds.nitrogenHigh} mg/kg'
         );
       case 6: // Phosphorus
         return (
           low: CropThresholds.phosphorusLow,
           high: CropThresholds.phosphorusHigh,
-          info: 'Ideal: ${CropThresholds.phosphorusLow}-${CropThresholds.phosphorusHigh} ppm'
+          info: 'Ideal: ${CropThresholds.phosphorusLow}-${CropThresholds.phosphorusHigh} mg/kg'
         );
       case 7: // Potassium
         return (
           low: CropThresholds.potassiumLow,
           high: CropThresholds.potassiumHigh,
-          info: 'Ideal: ${CropThresholds.potassiumLow}-${CropThresholds.potassiumHigh} ppm'
+          info: 'Ideal: ${CropThresholds.potassiumLow}-${CropThresholds.potassiumHigh} mg/kg'
         );
       case 8: // Salinity
         return (
@@ -1100,7 +1100,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         displayReadings,
                         5,
                         'Nitrogen',
-                        'ppm',
+                        'mg/kg',
                         (r) => r.nitrogen.toDouble(),
                         Colors.red,
                         originalCount: sortedReadings.length,
@@ -1109,7 +1109,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         displayReadings,
                         6,
                         'Phosphorus',
-                        'ppm',
+                        'mg/kg',
                         (r) => r.phosphorus.toDouble(),
                         Colors.teal,
                         originalCount: sortedReadings.length,
@@ -1118,7 +1118,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
                         displayReadings,
                         7,
                         'Potassium',
-                        'ppm',
+                        'mg/kg',
                         (r) => r.potassium.toDouble(),
                         Colors.amber,
                         originalCount: sortedReadings.length,
@@ -1502,7 +1502,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           _buildCompactChart(
             readings,
             'Nitrogen',
-            'ppm',
+            'mg/kg',
             (r) => r.nitrogen.toDouble(),
             Colors.red,
           ),
@@ -1510,7 +1510,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           _buildCompactChart(
             readings,
             'Phosphorus',
-            'ppm',
+            'mg/kg',
             (r) => r.phosphorus.toDouble(),
             Colors.teal,
           ),
@@ -1518,7 +1518,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
           _buildCompactChart(
             readings,
             'Potassium',
-            'ppm',
+            'mg/kg',
             (r) => r.potassium.toDouble(),
             Colors.amber,
           ),
@@ -1535,7 +1535,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen>
             readings,
             'TDS',
             'ppm',
-            (r) => (r.tds ?? 0).toDouble(),
+            (r) => r.tds,
             Colors.deepPurple,
           ),
         ],

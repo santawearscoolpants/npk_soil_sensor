@@ -19,7 +19,8 @@ class SensorReadings extends Table {
   IntColumn get phosphorus => integer()();
   IntColumn get potassium => integer()();
   RealColumn get salinity => real()();
-  RealColumn get tds => real()();
+  // TDS: raw value from sensor (ppm). Default 0 for legacy rows.
+  RealColumn get tds => real().withDefault(const Constant(0))();
   // Calibrated values (persisted for charts/exports)
   RealColumn get ecCal => real().nullable()();  // dS/m
   RealColumn get phCal => real().nullable()();  // pH

@@ -56,11 +56,33 @@ class LocalExportService implements ExportService {
         'potassium (mg/kg)',
         'salinity (g/L)',
         'tds (ppm)',
+        'ec (conv dS/m)',
+        'ec (cal dS/m)',
+        'ph (conv)',
+        'ph (cal)',
+        'n (conv %)',
+        'n (cal %)',
+        'p (conv mg/kg)',
+        'p (cal mg/kg)',
+        'k (conv cmol(+)/kg)',
+        'k (cal cmol(+)/kg)',
         'cropParamsId',
       ],
       ...readings.asMap().entries.map((entry) {
         final index = entry.key;
         final r = entry.value;
+        final ecConv = r.ec / 1000.0;
+        final phConv = r.ph;
+        final nConv = r.nitrogen / 10000.0;
+        final pConv = r.phosphorus.toDouble();
+        final kConv = r.potassium / 391.0;
+
+        final ecCal = r.ecCal ?? (0.220636585 * ecConv + 0.06098882155);
+        final phCal = r.phCal ?? (0.06749371859 * phConv + 5.126893844);
+        final nCal = r.nCal ?? (0.005542328042 * nConv + 0.1148412698);
+        final pCal = r.pCal ?? (0.0414315776 * pConv + 7.840383242);
+        final kCal = r.kCal ?? (0.3580341716 * kConv + 0.1642282588);
+
         return [
           index + 1, // Start IDs from 1 for each export
           r.timestamp.toIso8601String(),
@@ -72,7 +94,17 @@ class LocalExportService implements ExportService {
           r.phosphorus,
           r.potassium,
           r.salinity,
-          r.tds ?? '',
+          r.tds,
+          ecConv,
+          ecCal,
+          phConv,
+          phCal,
+          nConv,
+          nCal,
+          pConv,
+          pCal,
+          kConv,
+          kCal,
           r.cropParamsId ?? '', // Handle null as empty string
         ];
       }),
@@ -126,6 +158,16 @@ class LocalExportService implements ExportService {
         'potassium (mg/kg)',
         'salinity (g/L)',
         'tds (ppm)',
+        'ec (conv dS/m)',
+        'ec (cal dS/m)',
+        'ph (conv)',
+        'ph (cal)',
+        'n (conv %)',
+        'n (cal %)',
+        'p (conv mg/kg)',
+        'p (cal mg/kg)',
+        'k (conv cmol(+)/kg)',
+        'k (cal cmol(+)/kg)',
         'cropParamsId',
         'soilType',
         'soilProperties',
@@ -142,6 +184,19 @@ class LocalExportService implements ExportService {
         final imageFilenames = r.cropParamsId != null
             ? (imagesByCropId[r.cropParamsId] ?? []).join('; ')
             : '';
+
+        final ecConv = r.ec / 1000.0;
+        final phConv = r.ph;
+        final nConv = r.nitrogen / 10000.0;
+        final pConv = r.phosphorus.toDouble();
+        final kConv = r.potassium / 391.0;
+
+        final ecCal = r.ecCal ?? (0.220636585 * ecConv + 0.06098882155);
+        final phCal = r.phCal ?? (0.06749371859 * phConv + 5.126893844);
+        final nCal = r.nCal ?? (0.005542328042 * nConv + 0.1148412698);
+        final pCal = r.pCal ?? (0.0414315776 * pConv + 7.840383242);
+        final kCal = r.kCal ?? (0.3580341716 * kConv + 0.1642282588);
+
         return [
           index + 1, // Start IDs from 1 for each export
           r.timestamp.toIso8601String(),
@@ -153,7 +208,17 @@ class LocalExportService implements ExportService {
           r.phosphorus,
           r.potassium,
           r.salinity,
-          r.tds ?? '',
+          r.tds,
+          ecConv,
+          ecCal,
+          phConv,
+          phCal,
+          nConv,
+          nCal,
+          pConv,
+          pCal,
+          kConv,
+          kCal,
           r.cropParamsId ?? '', // Handle null as empty string
           cp?.soilType ?? '',
           cp?.soilProperties ?? '',

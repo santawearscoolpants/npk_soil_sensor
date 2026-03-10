@@ -480,9 +480,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         ['EC', 'mS/cm', (SensorReading r) => r.ec, Colors.green],
         ['Temperature', '°C', (SensorReading r) => r.temperature, Colors.orange],
         ['pH', '', (SensorReading r) => r.ph, Colors.purple],
-        ['Nitrogen', 'ppm', (SensorReading r) => r.nitrogen.toDouble(), Colors.red],
-        ['Phosphorus', 'ppm', (SensorReading r) => r.phosphorus.toDouble(), Colors.teal],
-        ['Potassium', 'ppm', (SensorReading r) => r.potassium.toDouble(), Colors.amber],
+        ['Nitrogen', 'mg/kg', (SensorReading r) => r.nitrogen.toDouble(), Colors.red],
+        ['Phosphorus', 'mg/kg', (SensorReading r) => r.phosphorus.toDouble(), Colors.teal],
+        ['Potassium', 'mg/kg', (SensorReading r) => r.potassium.toDouble(), Colors.amber],
         ['Salinity', 'g/L', (SensorReading r) => r.salinity, Colors.cyan],
       ];
 
